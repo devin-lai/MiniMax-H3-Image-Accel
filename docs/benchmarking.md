@@ -1,6 +1,6 @@
 # Benchmarking and accuracy
 
-[Project README](../README.md) · [Runtime guide](runtime.md)
+[Project README](../README.md) · [Published benchmark data](benchmarks/README.md) · [Runtime guide](runtime.md)
 
 ## Run a matched comparison
 
@@ -39,6 +39,19 @@ For a single-RTX-5090 BF16 comparison, use `single-reference` and `single` with 
 The audit verifies matching case metadata and validates each file against its recorded hash. It reports whether the PNG hashes match and, with `--pixel-identical`, fails on any decoded pixel difference. For an approximate profile, omit `--pixel-identical` to apply the per-case gates of RGB PSNR ≥ 40 dB and luma SSIM ≥ 0.99. These scores quantify closeness to the chosen reference. Review full frames and matched crops to assess prompt adherence, typography, and texture.
 
 Use TP1 versus TP1 and TP4 versus TP4 when checking equality. The order of BF16 operations can differ across topologies. The `exact` and `lossless` presets also use different arithmetic paths.
+
+## Build an image stack
+
+After checking the two matched runs above, export their full frames and 1:1 crops.
+
+```bash
+.venv/bin/python bin/make_comparisons.py --runs runs \
+  --variant 'bf16-nccl=BF16 NCCL' \
+  --variant 'bf16-host=BF16 verified host transport' \
+  --output runs/bf16-comparison
+```
+
+Open `runs/bf16-comparison/side-by-side.png` for the full-frame comparison and `detail-crops.png` for matched source-pixel regions. The same folder contains `pixel-differences.csv`.
 
 ## Measure throughput
 

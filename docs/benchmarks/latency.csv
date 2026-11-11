@@ -1,0 +1,77 @@
+group,build,run,gpus,quality,passes,case,trials,median_seconds,min_seconds,max_seconds
+single-exact,Native BF16 reference,single-exact-reference,1,exact,6,product,3,16.5918,16.5836,16.5956
+single-exact,Native BF16 reference,single-exact-reference,1,exact,6,portrait,3,16.6032,16.5947,16.6088
+single-exact,Native BF16 reference,single-exact-reference,1,exact,6,edit,3,25.1159,25.1054,25.1169
+single-exact,Native BF16 reference,single-exact-reference,1,exact,6,native-4k,3,72.6826,72.6774,72.6852
+single-exact,single: residency + verified graphs,single-exact-optimized,1,exact,6,product,3,11.7416,11.7381,11.7593
+single-exact,single: residency + verified graphs,single-exact-optimized,1,exact,6,portrait,3,11.7318,11.7313,11.7321
+single-exact,single: residency + verified graphs,single-exact-optimized,1,exact,6,edit,3,20.9098,20.8961,20.91
+single-exact,single: residency + verified graphs,single-exact-optimized,1,exact,6,native-4k,3,58.9081,58.8921,58.9187
+l20-accurate,Earlier native BF16 / original placement,l20-bf16,4,lossless,6,product,3,7.3179,7.3023,14.4609
+l20-accurate,Earlier native BF16 / original placement,l20-bf16,4,lossless,6,portrait,3,7.2979,7.2974,7.3017
+l20-accurate,Earlier native BF16 / original placement,l20-bf16,4,lossless,6,edit,3,13.3635,13.3514,13.3644
+l20-accurate,Earlier native BF16 / original placement,l20-bf16,4,lossless,6,native-4k,3,32.2207,32.2013,32.2532
+l20-accurate,Fresh BF16 + NCCL / spread placement,accuracy-reference-final,4,lossless,6,product,3,5.2928,5.2909,5.2976
+l20-accurate,Fresh BF16 + NCCL / spread placement,accuracy-reference-final,4,lossless,6,portrait,3,5.2969,5.296,5.2989
+l20-accurate,Fresh BF16 + NCCL / spread placement,accuracy-reference-final,4,lossless,6,edit,3,9.9093,9.8987,9.9161
+l20-accurate,Fresh BF16 + NCCL / spread placement,accuracy-reference-final,4,lossless,6,native-4k,3,24.2695,24.2547,24.2723
+l20-accurate,accurate: spread + verified BF16 transport,accuracy-auto-final,4,lossless,6,product,3,5.0255,5.0245,5.0394
+l20-accurate,accurate: spread + verified BF16 transport,accuracy-auto-final,4,lossless,6,portrait,3,5.0283,5.0246,5.0305
+l20-accurate,accurate: spread + verified BF16 transport,accuracy-auto-final,4,lossless,6,edit,3,9.3858,9.3846,9.3865
+l20-accurate,accurate: spread + verified BF16 transport,accuracy-auto-final,4,lossless,6,native-4k,3,22.849,22.8428,22.8497
+l20-fast,Native BF16 / TP4,l20-bf16,4,lossless,6,product,3,7.3179,7.3023,14.4609
+l20-fast,Native BF16 / TP4,l20-bf16,4,lossless,6,portrait,3,7.2979,7.2974,7.3017
+l20-fast,Native BF16 / TP4,l20-bf16,4,lossless,6,edit,3,13.3635,13.3514,13.3644
+l20-fast,Native BF16 / TP4,l20-bf16,4,lossless,6,native-4k,3,32.2207,32.2013,32.2532
+l20-fast,Earlier FP8 + Sage2 / NCCL U4,fp8-sage-tp1sp4,4,lossless,6,product,3,3.4541,3.4445,3.4586
+l20-fast,Earlier FP8 + Sage2 / NCCL U4,fp8-sage-tp1sp4,4,lossless,6,portrait,3,3.4294,3.4286,3.452
+l20-fast,Earlier FP8 + Sage2 / NCCL U4,fp8-sage-tp1sp4,4,lossless,6,edit,3,6.6277,6.6199,6.6347
+l20-fast,Earlier FP8 + Sage2 / NCCL U4,fp8-sage-tp1sp4,4,lossless,6,native-4k,3,14.7197,14.7158,14.7271
+l20-fast,fast: FP8 + quantized U4,l20q-sp4,4,lossless,6,product,3,2.2883,2.2808,2.2902
+l20-fast,fast: FP8 + quantized U4,l20q-sp4,4,lossless,6,portrait,3,2.2847,2.279,2.2847
+l20-fast,fast: FP8 + quantized U4,l20q-sp4,4,lossless,6,edit,3,4.494,4.488,4.5046
+l20-fast,fast: FP8 + quantized U4,l20q-sp4,4,lossless,6,native-4k,3,10.1447,10.1329,10.1912
+l20-fast,fast + four merged passes,l20q-sp4-four,4,lossless,4 merged,product,3,1.6077,1.6072,1.6212
+l20-fast,fast + four merged passes,l20q-sp4-four,4,lossless,4 merged,portrait,3,1.5971,1.5954,1.6118
+l20-fast,fast + four merged passes,l20q-sp4-four,4,lossless,4 merged,edit,3,3.3812,3.3782,3.3872
+l20-fast,fast + four merged passes,l20q-sp4-four,4,lossless,4 merged,native-4k,3,7.0027,6.997,7.003
+l20-fast,fast + three merged passes,l20q-sp4-three,4,lossless,3 merged,product,2,1.2633,1.2561,1.2706
+l20-fast,fast + three merged passes,l20q-sp4-three,4,lossless,3 merged,portrait,2,1.2521,1.2483,1.2559
+l20-fast,fast + three merged passes,l20q-sp4-three,4,lossless,3 merged,edit,2,2.8251,2.8192,2.831
+l20-fast,fast + three merged passes,l20q-sp4-three,4,lossless,3 merged,native-4k,2,5.4172,5.4163,5.4181
+l20-fast,latency: FP8 + quantized U8,l20q-sp8,8,lossless,6,product,3,1.9269,1.9211,1.9276
+l20-fast,latency: FP8 + quantized U8,l20q-sp8,8,lossless,6,portrait,3,1.9087,1.8989,1.9152
+l20-fast,latency: FP8 + quantized U8,l20q-sp8,8,lossless,6,edit,3,3.751,3.7435,3.7586
+l20-fast,latency: FP8 + quantized U8,l20q-sp8,8,lossless,6,native-4k,3,6.8431,6.8331,6.8579
+l20-fast,latency + four merged passes,l20q-sp8-four,8,lossless,4 merged,product,3,1.3324,1.3265,1.3455
+l20-fast,latency + four merged passes,l20q-sp8-four,8,lossless,4 merged,portrait,3,1.3258,1.325,1.3292
+l20-fast,latency + four merged passes,l20q-sp8-four,8,lossless,4 merged,edit,3,2.9228,2.9177,2.9248
+l20-fast,latency + four merged passes,l20q-sp8-four,8,lossless,4 merged,native-4k,3,4.8028,4.7343,4.8119
+l20-fast,latency + three merged passes,l20q-sp8-three,8,lossless,3 merged,product,2,1.0663,1.0599,1.0726
+l20-fast,latency + three merged passes,l20q-sp8-three,8,lossless,3 merged,portrait,2,1.0429,1.0408,1.0449
+l20-fast,latency + three merged passes,l20q-sp8-three,8,lossless,3 merged,edit,2,2.5067,2.5011,2.5123
+l20-fast,latency + three merged passes,l20q-sp8-three,8,lossless,3 merged,native-4k,2,3.7208,3.6985,3.7432
+rtx5090,Native BF16 / exact,bf16-exact,4,exact,6,product,1,5.7073,5.7073,5.7073
+rtx5090,Native BF16 / exact,bf16-exact,4,exact,6,portrait,1,5.5877,5.5877,5.5877
+rtx5090,Native BF16 / exact,bf16-exact,4,exact,6,edit,1,8.7343,8.7343,8.7343
+rtx5090,Native BF16 / exact,bf16-exact,4,exact,6,native-4k,1,21.7726,21.7726,21.7726
+rtx5090,Tuned BF16 / upstream lossless,bf16-tuned,4,lossless,6,product,1,3.8327,3.8327,3.8327
+rtx5090,Tuned BF16 / upstream lossless,bf16-tuned,4,lossless,6,portrait,1,3.829,3.829,3.829
+rtx5090,Tuned BF16 / upstream lossless,bf16-tuned,4,lossless,6,edit,1,6.9827,6.9827,6.9827
+rtx5090,Tuned BF16 / upstream lossless,bf16-tuned,4,lossless,6,native-4k,1,16.9683,16.9683,16.9683
+rtx5090,MXFP8 + FlashAttention,mxfp8-fa4,4,lossless,6,product,1,3.3578,3.3578,3.3578
+rtx5090,MXFP8 + FlashAttention,mxfp8-fa4,4,lossless,6,portrait,1,3.1486,3.1486,3.1486
+rtx5090,MXFP8 + FlashAttention,mxfp8-fa4,4,lossless,6,edit,1,5.8409,5.8409,5.8409
+rtx5090,MXFP8 + FlashAttention,mxfp8-fa4,4,lossless,6,native-4k,1,14.2564,14.2564,14.2564
+rtx5090,fast: MXFP8 + Sage2 + GPU output,gpu-output-six-v2,4,lossless,6,product,3,2.3904,2.3883,9.647
+rtx5090,fast: MXFP8 + Sage2 + GPU output,gpu-output-six-v2,4,lossless,6,portrait,3,2.3665,2.3628,2.3763
+rtx5090,fast: MXFP8 + Sage2 + GPU output,gpu-output-six-v2,4,lossless,6,edit,3,4.2909,4.2694,4.3186
+rtx5090,fast: MXFP8 + Sage2 + GPU output,gpu-output-six-v2,4,lossless,6,native-4k,3,9.501,9.4858,9.5289
+rtx5090,fast + balanced,gpu-output-balanced-v2,4,lossless,4 merged,product,3,1.696,1.6817,1.71
+rtx5090,fast + balanced,gpu-output-balanced-v2,4,lossless,4 merged,portrait,3,1.6485,1.6469,1.6656
+rtx5090,fast + balanced,gpu-output-balanced-v2,4,lossless,4 merged,edit,3,3.1553,3.1503,3.1797
+rtx5090,fast + balanced,gpu-output-balanced-v2,4,lossless,4 merged,native-4k,3,6.5701,6.5398,6.5909
+rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,product,3,1.3208,1.2959,1.4532
+rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,portrait,3,1.3497,1.3086,1.3999
+rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,edit,3,2.6317,2.6192,2.6362
+rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,native-4k,3,5.1253,5.0959,5.202

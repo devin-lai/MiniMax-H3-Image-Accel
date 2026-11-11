@@ -1,0 +1,5 @@
+label,case,clients,images,wall_seconds,images_per_minute,median_request_seconds,p95_request_seconds
+single-bf16-stream,product,1,6,41.2789,8.7212,6.8056,6.8594
+single-bf16-tuned,product,1,6,41.2074,8.7363,6.7855,6.879
+single-mxfp8-dit,product,1,6,24.42,14.742,3.9955,4.0526
+single-mxfp8-sage,product,1,6,19.817,18.1662,3.2142,3.2893

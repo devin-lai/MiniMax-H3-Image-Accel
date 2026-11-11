@@ -1,0 +1,17 @@
+panel,setting,build,gpus,images,clients,images_per_minute
+One L20 · 2K,exact,reference,1,8,2,3.623
+One L20 · 2K,exact,optimized,1,8,2,5.1207
+One L20 · 2K,lossless,reference,1,8,2,4.6138
+One L20 · 2K,lossless,optimized,1,8,2,5.22
+Eight L20s · 2K,six,reference,8,24,4,42.0978
+Eight L20s · 2K,six,optimized,8,24,4,58.1968
+Eight L20s · 2K,four,reference,8,24,4,60.6648
+Eight L20s · 2K,four,optimized,8,24,4,80.9187
+Eight L20s · 2K,three,reference,8,20,4,76.4076
+Eight L20s · 2K,three,optimized,8,20,4,106.2166
+Eight L20s · 4K,six,reference,8,12,4,8.9094
+Eight L20s · 4K,six,optimized,8,12,4,11.056
+Eight L20s · 4K,four,reference,8,12,4,13.0581
+Eight L20s · 4K,four,optimized,8,12,4,16.1998
+Eight L20s · 4K,three,reference,8,12,4,16.8332
+Eight L20s · 4K,three,optimized,8,12,4,20.2438
