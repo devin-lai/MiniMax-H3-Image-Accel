@@ -1,0 +1,22 @@
+{
+  "reference": "accuracy-reference-final",
+  "variants": [
+    {
+      "run": "accuracy-reference-final",
+      "label": "Native BF16 TP4\nNCCL reference / lossless"
+    },
+    {
+      "run": "accuracy-auto-final",
+      "label": "Optimized BF16 TP4\nVerified transport / lossless"
+    }
+  ],
+  "groups": [
+    {
+      "name": "bf16-preservation",
+      "title": "Four L20s: reference BF16 pixels preserved",
+      "runs": ["accuracy-auto-final"],
+      "hardware_note": "Both runs: four L20s / BF16 / TP4.",
+      "timing_note": "All six native passes. Same GPUs and spread placement; median of 3 warmed HTTP trials per case."
+    }
+  ]
+}

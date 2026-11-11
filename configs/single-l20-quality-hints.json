@@ -1,0 +1,30 @@
+{
+  "reference": "single-exact-reference",
+  "cases": [
+    "product",
+    "portrait"
+  ],
+  "allow_quality_difference": true,
+  "variants": [
+    {
+      "run": "single-exact-reference",
+      "label": "Native BF16 exact\nSequential decoder tiles",
+      "quality": "exact"
+    },
+    {
+      "run": "single-final-baseline",
+      "label": "Upstream lossless quality\nQuality-gated fusion / batching",
+      "quality": "lossless"
+    }
+  ],
+  "groups": [
+    {
+      "name": "quality-hints",
+      "title": "Native exact and upstream lossless quality hints",
+      "runs": [
+        "single-final-baseline"
+      ],
+      "timing_note": "The quality hint intentionally differs between columns. Other request metadata matches. Both timings are medians of 3."
+    }
+  ]
+}

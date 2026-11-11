@@ -1,0 +1,100 @@
+{
+  "reference": "single-final-baseline",
+  "variants": [
+    {
+      "run": "single-final-baseline",
+      "label": "BF16 / lossless quality\n6 passes / FlashAttention"
+    },
+    {
+      "run": "single-lossless-optimized",
+      "label": "Optimized BF16 / lossless\nResident encoder + VAE"
+    },
+    {
+      "run": "single-int8-convrot",
+      "label": "DiT ConvRot INT8\n6 passes / FlashAttention"
+    },
+    {
+      "run": "single-fp8-fa",
+      "label": "DiT FP8\n6 passes / FlashAttention"
+    },
+    {
+      "run": "single-fp8-sage6",
+      "label": "DiT FP8 + Sage2\n6 passes / tuned residency"
+    },
+    {
+      "run": "single-int8-protected",
+      "label": "Selective DiT INT8\nBF16 conditioning + end blocks"
+    },
+    {
+      "run": "single-int8-mlp12",
+      "label": "INT8 last 12 MLPs\nBF16 attention + conditioning"
+    },
+    {
+      "run": "single-bf16-compiled",
+      "label": "BF16 regional compilation\n6 passes / FlashAttention",
+      "exclude_timing_trials": {
+        "product": [
+          1
+        ]
+      }
+    },
+    {
+      "run": "single-bf16-five-merge",
+      "label": "BF16 five merged passes\nSteps 0, 2, 3, 4, 5"
+    },
+    {
+      "run": "single-bf16-tea015",
+      "label": "BF16 TeaCache\nThreshold 0.15"
+    },
+    {
+      "run": "single-bf16-early-reuse",
+      "label": "BF16 residual reuse\nReuse step 1"
+    },
+    {
+      "run": "single-bf16-sage-fp16",
+      "label": "BF16 + Sage2\nFP16 PV / FP32 accumulation"
+    }
+  ],
+  "groups": [
+    {
+      "name": "recommended-and-fast",
+      "title": "Single L20: lossless-quality memory tuning and precision changes",
+      "runs": [
+        "single-lossless-optimized",
+        "single-int8-protected",
+        "single-fp8-sage6"
+      ],
+      "timing_note": "Final baseline/optimized: medians of 3 trials. Other rows are exploratory (1 trial; compiled: 1\u20132 warmed trials)."
+    },
+    {
+      "name": "precision",
+      "title": "Single L20: precision and attention tradeoffs",
+      "runs": [
+        "single-int8-convrot",
+        "single-fp8-fa",
+        "single-bf16-sage-fp16"
+      ],
+      "timing_note": "Final baseline/optimized: medians of 3 trials. Other rows are exploratory (1 trial; compiled: 1\u20132 warmed trials)."
+    },
+    {
+      "name": "passes-and-compile",
+      "title": "Single L20: compilation, fewer passes and residual reuse",
+      "runs": [
+        "single-bf16-compiled",
+        "single-bf16-five-merge",
+        "single-bf16-tea015",
+        "single-bf16-early-reuse"
+      ],
+      "timing_note": "Final baseline/optimized: medians of 3 trials. Other rows are exploratory (1 trial; compiled: 1\u20132 warmed trials)."
+    },
+    {
+      "name": "selective-int8",
+      "title": "Single L20: protecting sensitive layers in INT8",
+      "runs": [
+        "single-int8-mlp12",
+        "single-int8-protected"
+      ],
+      "timing_note": "Final baseline/optimized: medians of 3 trials. Other rows are exploratory (1 trial; compiled: 1\u20132 warmed trials)."
+    }
+  ]
+}

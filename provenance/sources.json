@@ -1,0 +1,57 @@
+{
+  "sglang": {
+    "url": "https://github.com/sgl-project/sglang",
+    "commit": "eb73a50b1d6183deb1d79ca425677bd0cf93342f",
+    "local_changes": true
+  },
+  "SageAttention": {
+    "url": "https://github.com/thu-ml/SageAttention",
+    "commit": "d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5",
+    "build_change": "C++20 for torch 2.14 headers"
+  },
+  "MiniMax-H3-Image": {
+    "url": "https://github.com/MiniMax-AI/MiniMax-H3-Image",
+    "commit": "6ea7b9e55523a2177e4f759db372065ba6089510"
+  },
+  "MiniMax-H3": {
+    "url": "https://github.com/MiniMax-AI/MiniMax-H3",
+    "commit": "199b7d0e1fd95e7b3eafa8c15eca692534142427"
+  },
+  "CUTLASS_headers": {
+    "url": "https://github.com/NVIDIA/cutlass",
+    "commit_at_download": "b2f249acd20392beeb16f5e5a31f4f1a4e38b3bd",
+    "downloaded_main_archive_sha256": "e624ea144a8f29426fdee2558bbc55c9432ad39390f18d4325074fac2245f0e3",
+    "scope": "include and tools/util/include for optional Sage3 build"
+  },
+  "reference_docs": [
+    "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image",
+    "https://huggingface.co/docs/diffusers/main/en/api/pipelines/minimax_h3_image",
+    "https://github.com/sgl-project/sglang",
+    "https://github.com/thu-ml/SageAttention"
+  ],
+  "NCCL_reduction_reference": {
+    "url": "https://github.com/NVIDIA/nccl",
+    "commit": "73cf112295c33aee2b895f329f592f2a9b4b0f97",
+    "tag": "v2.30.7-1",
+    "files": [
+      "src/device/all_reduce.h",
+      "src/device/prims_simple.h",
+      "src/transport/shm.cc"
+    ],
+    "use": "Reduction-order analysis for the new original BF16 host implementation; NCCL is not replaced or rebuilt."
+  },
+  "accuracy_optimization_references": [
+    {
+      "url": "https://github.com/Dao-AILab/flash-attention",
+      "use": "Retain dense BF16 exact attention instead of approximate SageAttention."
+    },
+    {
+      "url": "https://github.com/deepspeedai/DeepSpeed/blob/master/docs/_tutorials/ds-sequence.md",
+      "use": "Sequence-parallel communication analysis; alternate TP2/Ulysses2 was measured and rejected as the accuracy default."
+    },
+    {
+      "url": "https://github.com/xdit-project/xDiT/blob/main/docs/methods/usp.md",
+      "use": "Topology-aware parallel-layout research; reference TP4 is retained to preserve seeded outputs."
+    }
+  ]
+}

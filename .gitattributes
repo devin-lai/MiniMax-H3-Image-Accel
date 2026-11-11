@@ -1,0 +1,4 @@
+# CSV exporters use CRLF line endings; retain the other whitespace checks.
+*.csv whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+# Preserve upstream bytes and keep vendored code out of GitHub language stats.
+/vendor/** -text linguist-vendored

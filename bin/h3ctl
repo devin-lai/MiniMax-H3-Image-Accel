@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+base=${H3_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}
+export H3_ROOT="$base"
+cd "$base"
+port=${H3_PORT:-30000}
+if [[ ! "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+  echo "Invalid H3_PORT: $port" >&2
+  exit 2
+fi
+logdir=logs
+if [[ "$port" != 30000 ]]; then logdir="logs/port-$port"; fi
+mkdir -p "$logdir"
+exec 9>"$logdir/server.lock"
+flock 9
+pidfile="$logdir/server.pid"
+pid=
+if [[ -r "$pidfile" ]]; then read -r pid < "$pidfile"; fi
+owned() {
+  [[ "$pid" =~ ^[1-9][0-9]+$ && -r "/proc/$pid/cmdline" ]] &&
+    tr '\0' ' ' < "/proc/$pid/cmdline" | grep -Fq -- "$base/"
+}
+case "${1:-status}" in
+  start)
+    shift
+    if owned; then printf 'Server already started (PID %s).\n' "$pid" >&2; exit 1; fi
+    if curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+      printf '%s\n' "Port is already serving a healthy endpoint." >&2; exit 1
+    fi
+    log="server-$(date '+%Y%m%d-%H%M%S').log"
+    ln -sfn "$log" "$logdir/current.log"
+    rm -f "$pidfile"
+    setsid -f bash -c 'echo "$$" > "$1"
+      shift
+      if [[ -n ${H3_CPUS:-} ]]; then exec taskset -c "$H3_CPUS" "$@"; fi
+      exec "$@"' _ "$pidfile" "$base/bin/serve_h3.sh" "$@" > "$logdir/$log" 2>&1 </dev/null 9>&-
+    for attempt in {1..20}; do [[ -s "$pidfile" ]] && break; sleep 0.1; done
+    printf 'Server PID %s; log %s/%s/%s\n' "$(cat "$pidfile")" "$base" "$logdir" "$log"
+    ;;
+  stop)
+    if ! owned; then printf '%s\n' "No task-owned server is running."; exit 0; fi
+    pgid=$(ps -p "$pid" -o pgid= | tr -d ' ')
+    [[ "$pgid" == "$pid" ]]
+    kill -TERM -- "-$pid"
+    printf 'Sent SIGTERM to task server group %s.\n' "$pid"
+    ;;
+  status)
+    if ! owned; then printf '%s\n' "No task-owned server is running."; exit 1; fi
+    ps -p "$pid" -o pid=,etime=,args=
+    curl -fsS --max-time 4 "http://127.0.0.1:$port/health"
+    ;;
+  *) printf '%s\n' 'Usage: h3ctl {start [native|fp8-dit|fp8-all|mxfp8-dit|mxfp8-all|int8-mlp] [server flags]|stop|status}' >&2; exit 2 ;;
+esac

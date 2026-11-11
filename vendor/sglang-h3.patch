@@ -1,0 +1,2972 @@
+diff --git a/python/sglang/multimodal_gen/configs/pipeline_configs/minimax_h3_image.py b/python/sglang/multimodal_gen/configs/pipeline_configs/minimax_h3_image.py
+--- a/python/sglang/multimodal_gen/configs/pipeline_configs/minimax_h3_image.py
++++ b/python/sglang/multimodal_gen/configs/pipeline_configs/minimax_h3_image.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """MiniMax-H3 image (t2i / edit) pipeline config and its registration."""
+ 
+ import json
+@@ -218,12 +219,45 @@
+         if self._server_arg_value(server_args.backend) not in ("auto", "sglang"):
+             raise ValueError("MiniMax H3 image requires the native SGLang backend")
+         selected_backend = self.resolve_transformer_attention_backend(server_args)
+-        if selected_backend not in (None, AttentionBackendEnum.FA):
++        # The experimental path uses the existing dense SageAttention packed
++        # adapter. It preserves document boundaries and masks alignment padding.
++        # Keep the release default and reject unsupported placements.
++        sage2_requested = (
++            selected_backend is AttentionBackendEnum.SAGE_ATTN
++            and os.environ.get("SGLANG_H3_IMAGE_EXPERIMENTAL_SAGE2") == "1"
++        )
++        sage3_requested = (
++            selected_backend is AttentionBackendEnum.SAGE_ATTN_3
++            and os.environ.get("H3_OPT_SAGE3_EXPERIMENTAL") == "1"
++        )
++        experimental_sage = False
++        if (
++            (sage2_requested or sage3_requested)
++            and current_platform.is_cuda()
++            and server_args.ring_degree == 1
++            and (
++                not server_args.enable_breakable_cuda_graph
++                or os.environ.get("H3_OPT_GRAPH_EXPERIMENTAL") == "1"
++            )
++        ):
++            capability = torch.cuda.get_device_capability()
++            experimental_sage = capability[0] == 12 or (
++                sage2_requested and capability == (8, 9)
++            )
++        if selected_backend not in (None, AttentionBackendEnum.FA) and not experimental_sage:
+             raise ValueError("MiniMax H3 image requires dense FlashAttention")
+-        for name in ("nnodes", "dp_size"):
+-            value = getattr(server_args, name)
+-            if type(value) is not int or value != 1:
+-                raise ValueError(f"MiniMax H3 image requires {name}=1")
++        if type(server_args.nnodes) is not int or server_args.nnodes != 1:
++            raise ValueError("MiniMax H3 image requires nnodes=1")
++        dp = server_args.dp_size
++        if type(dp) is not int or dp < 1 or (
++            dp > 1
++            and not (
++                os.environ.get("H3_OPT_DP") == "1"
++                and current_platform.is_cuda()
++                and torch.cuda.get_device_capability() == (8, 9)
++            )
++        ):
++            raise ValueError("MiniMax H3 image requires dp_size=1 unless Ada DP is enabled")
+         # tp_size and ulysses_degree * ring_degree stay with the DiT's own
+         # head/alignment admission checks; ring already has the FA it needs
+         # because the image release forces FlashAttention below.
+@@ -244,14 +278,28 @@
+         if server_args.minimax_h3_adaln_cache_path is not None:
+             raise ValueError("MiniMax H3 image does not support an AdaLN cache")
+         online_quantizations = (None, "fp8", "mxfp8")
+-        if server_args.quantization not in online_quantizations or any(
++        transformer_quantizations = online_quantizations
++        if os.environ.get("H3_OPT_CONVROT_EXPERIMENTAL") == "1" or (
++            os.environ.get("H3_OPT_INT8_EXPERIMENTAL") == "1"
++            and current_platform.is_cuda()
++            and torch.cuda.get_device_capability() == (12, 0)
++            and server_args.num_gpus == 1
++        ):
++            transformer_quantizations += ("convrot_int8",)
++        if server_args.quantization not in transformer_quantizations or any(
+             name not in ("transformer", "text_encoder")
+-            or value not in online_quantizations
++            or value not in (
++                transformer_quantizations
++                if name == "transformer"
++                else online_quantizations
++            )
+             for name, value in server_args.component_quantizations.items()
+         ):
+             raise ValueError(
+                 "MiniMax H3 image supports online fp8/mxfp8 for the transformer "
+-                "and text_encoder; the image VAE retains native precision"
++                "and text_encoder (experimental transformer ConvRot INT8 requires "
++                "H3_OPT_CONVROT_EXPERIMENTAL=1 or the single-SM120 "
++                "H3_OPT_INT8_EXPERIMENTAL=1 profile); the image VAE retains native precision"
+             )
+         if server_args.lora_path is not None:
+             raise ValueError("MiniMax H3 image does not support LoRA")
+diff --git a/python/sglang/multimodal_gen/configs/sample/minimax_h3_image.py b/python/sglang/multimodal_gen/configs/sample/minimax_h3_image.py
+--- a/python/sglang/multimodal_gen/configs/sample/minimax_h3_image.py
++++ b/python/sglang/multimodal_gen/configs/sample/minimax_h3_image.py
+@@ -1,6 +1,8 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """H3 image request: references (image_path) select edit, none select t2i."""
+ 
++import os
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+@@ -43,10 +45,16 @@
+     # the image is resized back to width x height. None takes the pipeline
+     # config's min_generation_area once the server adjusts the request.
+     min_generation_area: int | None = None
++    h3_opt: dict[str, Any] | None = None
++    # The single-card accuracy profile requests the native exact path.
++    # An explicit request still chooses its own quality level.
++    quality: str = field(
++        default_factory=lambda: os.environ.get("H3_OPT_DEFAULT_QUALITY", "lossless")
++    )
+ 
+     @classmethod
+     def image_request_extra_fields(cls) -> frozenset[str]:
+-        return frozenset({"min_generation_area"})
++        return frozenset({"min_generation_area", "h3_opt"})
+ 
+     @classmethod
+     def default_image_output_format(cls) -> str:
+@@ -93,6 +101,8 @@
+                 )
+ 
+     def _validate(self) -> None:
++        from sglang.multimodal_gen.runtime.models.dits.minimax_h3_opt import validate_h3_opt
++        validate_h3_opt(self.h3_opt)
+         if self.num_frames != 1 or self.num_outputs_per_prompt != 1:
+             raise ValueError("MiniMax H3 image produces exactly one image per request")
+         self._reject_guidance()
+diff --git a/python/sglang/multimodal_gen/runtime/cache/conditioning.py b/python/sglang/multimodal_gen/runtime/cache/conditioning.py
+--- a/python/sglang/multimodal_gen/runtime/cache/conditioning.py
++++ b/python/sglang/multimodal_gen/runtime/cache/conditioning.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Exact conditioning reuse within grouped stages and across requests."""
+ 
+ import copy
+@@ -615,12 +616,13 @@
+     nested=True,
+     share_in_group=False,
+     cross_request=True,
++    keep_on_device=False,
+ ):
+     if torch.compiler.is_compiling():
+         return compute()
+     # only consumed negative conditioning is device-hot; raw hidden states and
+     # other encoder boundaries keep their host-cache policy
+-    keep_on_device = namespace is not None and share_in_group and _prefer_cache.get()
++    keep_on_device = keep_on_device or (namespace is not None and share_in_group and _prefer_cache.get())
+     cross_request = cross_request or keep_on_device
+     cache = _inference_cache(
+         model, share_in_group=share_in_group, cross_request=cross_request
+diff --git a/python/sglang/multimodal_gen/runtime/distributed/communication_op.py b/python/sglang/multimodal_gen/runtime/distributed/communication_op.py
+--- a/python/sglang/multimodal_gen/runtime/distributed/communication_op.py
++++ b/python/sglang/multimodal_gen/runtime/distributed/communication_op.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+ 
+ # SPDX-License-Identifier: Apache-2.0
+@@ -19,6 +20,13 @@
+ ) -> torch.Tensor:
+     """All-reduce the input tensor across model parallel group."""
+     tp_group = tp_group or get_tp_group()
++    from sglang.multimodal_gen.runtime.distributed.h3_lossless_collectives import (
++        host_bf16_all_reduce,
++    )
++
++    output = host_bf16_all_reduce(input_, tp_group.device_group)
++    if output is not None:
++        return output
+     return tp_group.all_reduce(input_)
+ 
+ 
+diff --git a/python/sglang/multimodal_gen/runtime/distributed/h3_host_exchange.py b/python/sglang/multimodal_gen/runtime/distributed/h3_host_exchange.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/distributed/h3_host_exchange.py
+@@ -0,0 +1,242 @@
++"""Host-staged all-to-all for sequence-parallel groups without GPU peer access.
++
++Every rank owns one anonymous shared-memory file (memfd) with one outbound
++region per peer. The file is mapped by all ranks of the group and registered
++with CUDA as page-locked memory, so a message is one device-to-host DMA on the
++sender and one host-to-device DMA on the receiver. On PCIe 4.0 x16 L20s each
++direction moves about 24 GB/s, against roughly 6-9 GB/s for the NCCL
++host-allocation transport on the same node.
++
++Protocol. All ranks run the same ordered list of exchanges. Exchange ``n``
++splits every message into the same number of byte chunks and then:
++
++  1. drains the local stream; everything received in exchange ``n-1`` has now
++     landed, so it publishes ``ack = n-1``
++  2. waits until every peer acknowledged ``n-1`` (their previous inbound
++     copies no longer read our regions)
++  3. per chunk: queues the device-to-host copies, queues host-to-device copies
++     for whatever chunks the peers have published so far on a second stream,
++     drains the outbound copies and publishes the chunk
++  4. queues the remaining inbound chunks and makes the caller's stream wait
++     for the inbound stream
++
++A PCIe link is full duplex, so step 3 overlaps a rank's outbound chunk with
++its peers' previous chunk and an exchange costs little more than one
++direction. Counters are aligned 64-bit words in the owner's header page; x86
++stores of that size are atomic, and waiters spin.
++
++When every peer receives the same source tensor (all-gather), the sender
++stages it once and publishes a shared-region flag alongside the counters.
++Every receiver reads that one region. Explicit copy directions avoid CUDA's
++pointer-kind inference on every chunk.
++"""
++
++from __future__ import annotations
++
++import ctypes
++import mmap
++import os
++import time
++
++import numpy as np
++import torch
++
++_HEADER = 4096
++_SYS_MEMFD_CREATE = 319  # x86_64
++_CUDA_MEMCPY_HOST_TO_DEVICE = 1
++_CUDA_MEMCPY_DEVICE_TO_HOST = 2
++_cudart = None
++
++
++def _runtime():
++    global _cudart
++    if _cudart is None:
++        last = None
++        for name in ("libcudart.so.13", "libcudart.so.12", "libcudart.so"):
++            try:
++                lib = ctypes.CDLL(name)
++                break
++            except OSError as exc:  # pragma: no cover - depends on the install
++                last = exc
++        else:
++            raise RuntimeError(f"CUDA runtime library not found: {last}")
++        lib.cudaHostRegister.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint]
++        lib.cudaHostRegister.restype = ctypes.c_int
++        lib.cudaMemcpyAsync.argtypes = [
++            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_void_p,
++        ]
++        lib.cudaMemcpyAsync.restype = ctypes.c_int
++        _cudart = lib
++    return _cudart
++
++
++def _map_registered(fd: int, size: int) -> tuple[mmap.mmap, np.ndarray, int]:
++    mapping = mmap.mmap(fd, size, flags=mmap.MAP_SHARED | mmap.MAP_POPULATE)
++    array = np.frombuffer(mapping, dtype=np.uint8)
++    pointer = array.ctypes.data
++    status = _runtime().cudaHostRegister(pointer, size, 0)
++    if status != 0:
++        raise RuntimeError(f"cudaHostRegister failed with CUDA error {status}")
++    return mapping, array, pointer
++
++
++class HostExchange:
++    """One rank's endpoint. ``all_gather`` performs the one-time handshake."""
++
++    def __init__(self, world_size: int, rank: int, capacity: int, all_gather, device):
++        if os.uname().machine != "x86_64":
++            raise RuntimeError("the host exchange requires x86_64 Linux")
++        self.world_size, self.rank, self.capacity = world_size, rank, capacity
++        self.timeout = float(os.environ.get("H3_OPT_HOST_A2A_TIMEOUT", "120"))
++        self.size = _HEADER + (world_size - 1) * capacity
++        libc = ctypes.CDLL(None, use_errno=True)
++        fd = libc.syscall(_SYS_MEMFD_CREATE, b"h3-host-exchange", 0)
++        if fd < 0:
++            raise OSError(ctypes.get_errno(), "memfd_create failed")
++        os.ftruncate(fd, self.size)
++        self._keep = [_map_registered(fd, self.size)]
++        own = self._keep[0]
++        self._own_ptr = own[2]
++        self._own_words = np.frombuffer(own[0], dtype=np.uint64, count=3)
++        self._own_words[:] = 0
++        ident = torch.tensor([[os.getpid(), fd]], dtype=torch.int64, device=device)
++        idents = all_gather(ident).cpu().tolist()
++        self._peer_ptr: dict[int, int] = {}
++        self._peer_words: dict[int, np.ndarray] = {}
++        for peer, (pid, peer_fd) in enumerate(idents):
++            if peer == rank:
++                continue
++            handle = os.open(f"/proc/{pid}/fd/{peer_fd}", os.O_RDWR)
++            mapped = _map_registered(handle, self.size)
++            os.close(handle)
++            self._keep.append(mapped)
++            self._peer_ptr[peer] = mapped[2]
++            self._peer_words[peer] = np.frombuffer(mapped[0], dtype=np.uint64, count=3)
++        self.peers = sorted(self._peer_ptr)
++        self.seq = 0
++        self.chunk_bytes = int(os.environ.get("H3_OPT_HOST_A2A_CHUNK_KB", "1024")) << 10
++        self.max_chunks = int(os.environ.get("H3_OPT_HOST_A2A_MAX_CHUNKS", "8"))
++        self._inbound = None
++        self._event = torch.cuda.Event()
++
++    def _slot(self, owner: int, reader: int) -> int:
++        # the owner's region read by ``reader``
++        return _HEADER + (reader - (reader > owner)) * self.capacity
++
++    def _wait(self, word: int, value: int, peers=None) -> None:
++        pending = list(self.peers if peers is None else peers)
++        deadline = None
++        spins = 0
++        while pending:
++            pending = [p for p in pending if self._peer_words[p][word] < value]
++            spins += 1
++            if spins & 0xFFF == 0:
++                now = time.monotonic()
++                if deadline is None:
++                    deadline = now + self.timeout
++                elif now > deadline:
++                    raise RuntimeError(
++                        f"host exchange {value} timed out waiting for ranks {pending}"
++                    )
++
++    @staticmethod
++    def _segments(tensors, chunks: int):
++        """Split a message into ``chunks`` lists of (device pointer, offset, bytes)."""
++        spans, total = [], 0
++        for tensor in tensors:
++            nbytes = tensor.numel() * tensor.element_size()
++            spans.append((tensor.data_ptr(), total, nbytes))
++            total += nbytes
++        step = -(-total // chunks)
++        out = []
++        for index in range(chunks):
++            low, high = index * step, min((index + 1) * step, total)
++            pieces = []
++            for pointer, begin, nbytes in spans:
++                a, b = max(low, begin), min(high, begin + nbytes)
++                if a < b:
++                    pieces.append((pointer + a - begin, a, b - a))
++            out.append(pieces)
++        return out, total
++
++    def exchange(self, sends: dict[int, list], recvs: dict[int, list]) -> None:
++        """``sends[peer]``/``recvs[peer]``: lists of contiguous CUDA tensors.
++
++        Peers must list the same byte sizes in the same order, and every rank
++        must send every peer the same number of bytes.
++        """
++        copy = _runtime().cudaMemcpyAsync
++        stream = torch.cuda.current_stream()
++        outbound = stream.cuda_stream
++        if self._inbound is None:
++            self._inbound = torch.cuda.Stream()
++        inbound = self._inbound.cuda_stream
++        self.seq += 1
++        seq = self.seq
++        first = next(iter(sends.values()))
++        nbytes = sum(t.numel() * t.element_size() for t in first)
++        if nbytes > self.capacity:
++            raise RuntimeError("host exchange message exceeds its region")
++        chunks = max(1, min(self.max_chunks, nbytes // self.chunk_bytes))
++        out_plan = {p: self._segments(t, chunks)[0] for p, t in sends.items()}
++        in_plan = {p: self._segments(t, chunks)[0] for p, t in recvs.items()}
++        # All-gather sends the same reduced shard to every peer. Stage it once
++        # in shared host memory; all readers DMA from that same region.
++        signature = [(t.data_ptr(), t.numel() * t.element_size()) for t in first]
++        shared_send = all(
++            [(t.data_ptr(), t.numel() * t.element_size()) for t in tensors] == signature
++            for tensors in sends.values()
++        )
++        if shared_send:
++            out_plan = {next(iter(out_plan)): next(iter(out_plan.values()))}
++        received = dict.fromkeys(in_plan, 0)
++        base = seq << 10
++
++        def pull(block: bool) -> None:
++            for peer, plan in in_plan.items():
++                if block:
++                    self._wait(0, base + chunks, (peer,))
++                ready = int(self._peer_words[peer][0]) - base
++                source = self._peer_ptr[peer] + (
++                    _HEADER if self._peer_words[peer][2] else self._slot(peer, self.rank)
++                )
++                while received[peer] < min(ready, chunks):
++                    for pointer, offset, size in plan[received[peer]]:
++                        if copy(pointer, source + offset, size, _CUDA_MEMCPY_HOST_TO_DEVICE, inbound):
++                            raise RuntimeError("host-to-device copy failed")
++                    received[peer] += 1
++
++        stream.synchronize()
++        self._own_words[1] = seq - 1
++        self._wait(1, seq - 1)
++        self._own_words[2] = int(shared_send)
++        for index in range(chunks):
++            for peer, plan in out_plan.items():
++                target = self._own_ptr + (_HEADER if shared_send else self._slot(self.rank, peer))
++                for pointer, offset, size in plan[index]:
++                    if copy(target + offset, pointer, size, _CUDA_MEMCPY_DEVICE_TO_HOST, outbound):
++                        raise RuntimeError("device-to-host copy failed")
++            if index:
++                pull(False)
++            stream.synchronize()
++            self._own_words[0] = base + index + 1
++        pull(True)
++        self._event.record(self._inbound)
++        self._event.wait(stream)
++
++
++_endpoints: dict[tuple, HostExchange] = {}
++
++
++def get_host_exchange(
++    world_size: int, rank: int, all_gather, device, *, group_key="ulysses"
++) -> HostExchange:
++    # TP and Ulysses can have identical sizes/ranks on the same CUDA device.
++    # Their peers and exchange counters must never share an endpoint.
++    key = (group_key, world_size, rank, str(device))
++    endpoint = _endpoints.get(key)
++    if endpoint is None:
++        capacity = int(os.environ.get("H3_OPT_HOST_A2A_MB", "160")) << 20
++        endpoint = HostExchange(world_size, rank, capacity, all_gather, device)
++        _endpoints[key] = endpoint
++    return endpoint
+diff --git a/python/sglang/multimodal_gen/runtime/distributed/h3_lossless_collectives.py b/python/sglang/multimodal_gen/runtime/distributed/h3_lossless_collectives.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/distributed/h3_lossless_collectives.py
+@@ -0,0 +1,82 @@
++"""Uncompressed host collectives for single-node PCIe inference.
++
++All-to-all only permutes bytes. The two-rank all-reduce performs one BF16
++addition, as NCCL does, with no quantization or change in reduction order.
++Four-rank sums calibrate and verify NCCL's reduction order before use.
++"""
++
++import os
++
++import torch
++import torch.distributed as dist
++
++from sglang.multimodal_gen.runtime.distributed.h3_host_exchange import get_host_exchange
++
++
++def _eligible(x: torch.Tensor) -> bool:
++    return (
++        x.is_cuda
++        and x.dtype == torch.bfloat16
++        and x.is_contiguous()
++        and not torch.compiler.is_compiling()
++        and not torch.cuda.is_current_stream_capturing()
++    )
++
++
++def _endpoint(x, group):
++    world, rank = dist.get_world_size(group), dist.get_rank(group)
++
++    def gather(ident):
++        out = torch.empty((world, ident.shape[-1]), dtype=ident.dtype, device=ident.device)
++        dist.all_gather_into_tensor(out, ident, group=group)
++        return out
++
++    return get_host_exchange(
++        world, rank, gather, x.device,
++        group_key=group,
++    )
++
++
++def host_all_to_all(x: torch.Tensor, out: torch.Tensor, group) -> bool:
++    """Exchange equal contiguous BF16 shards, or return False for NCCL."""
++    if os.environ.get("H3_OPT_HOST_ULYSSES", "0") != "1" or not _eligible(x):
++        return False
++    world, rank = dist.get_world_size(group), dist.get_rank(group)
++    if world < 2 or x.numel() % world:
++        return False
++    nbytes = x.numel() * x.element_size() // world
++    if nbytes > int(os.environ.get("H3_OPT_HOST_A2A_MB", "160")) << 20:
++        return False
++    endpoint = _endpoint(x, group)
++    src, dst = x.view(world, -1), out.view(world, -1)
++    dst[rank].copy_(src[rank])
++    endpoint.exchange(
++        {p: [src[p]] for p in endpoint.peers},
++        {p: [dst[p]] for p in endpoint.peers},
++    )
++    return True
++
++
++def host_bf16_all_reduce(x: torch.Tensor, group) -> torch.Tensor | None:
++    """Preserve BF16 summation; retain NCCL for small or unsupported tensors."""
++    world = dist.get_world_size(group)
++    if (
++        os.environ.get("H3_OPT_HOST_TP", "0") != "1"
++        or not _eligible(x)
++        or world not in (2, 4)
++        or x.numel() * x.element_size() < (8 << 20 if world == 4 else 256 << 10)
++        or x.numel() * x.element_size() // (world if world == 4 else 1)
++        > int(os.environ.get("H3_OPT_HOST_A2A_MB", "160")) << 20
++    ):
++        return None
++    if world == 4:
++        from sglang.multimodal_gen.runtime.distributed.h3_preserving_all_reduce import (
++            preserving_all_reduce,
++        )
++
++        return preserving_all_reduce(x, group)
++    endpoint = _endpoint(x, group)
++    peer = endpoint.peers[0]
++    received = torch.empty_like(x)
++    endpoint.exchange({peer: [x]}, {peer: [received]})
++    return x.add_(received)
+diff --git a/python/sglang/multimodal_gen/runtime/distributed/h3_preserving_all_reduce.py b/python/sglang/multimodal_gen/runtime/distributed/h3_preserving_all_reduce.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/distributed/h3_preserving_all_reduce.py
+@@ -0,0 +1,145 @@
++"""Host reduce-scatter/all-gather preserving a four-rank NCCL BF16 sum.
++
++BF16 reduction is order-sensitive. NCCL's ring can use a different order for
++different buffer chunks. Two distinguishing scalar probes identify which of
++the 15 binary reduction trees each 16-element block uses. The first real sum
++is also checked against NCCL, on every rank. Unrecognized plans retain NCCL.
++No weights, activations, or communication payloads are quantized.
++"""
++
++import itertools
++import logging
++from collections import OrderedDict
++
++import torch
++import torch.distributed as dist
++import triton
++import triton.language as tl
++
++from sglang.multimodal_gen.runtime.distributed.h3_lossless_collectives import _endpoint
++
++logger = logging.getLogger(__name__)
++_plans = OrderedDict()
++_MAX_PLANS = 16
++_PROBES = (
++    (0.326171875, -0.0162353515625, -7.90625, 7.71875),
++    (-23.75, 0.1982421875, 20.125, 0.1044921875),
++)
++_ORDERS = [p for p in itertools.permutations(range(4)) if p[0] < p[1]]
++_ORDERS += [(0, 1, 2, 3), (0, 2, 1, 3), (0, 3, 1, 2)]
++
++
++def _signatures():
++    probes = torch.tensor(_PROBES, dtype=torch.bfloat16)
++    signatures = []
++    for index, order in enumerate(_ORDERS):
++        a, b, c, d = (probes[:, i] for i in order)
++        value = ((a + b) + c) + d if index < 12 else (a + b) + (c + d)
++        signatures.append(tuple(value.view(torch.int16).tolist()))
++    assert len(set(signatures)) == 15
++    return signatures
++
++
++_SIGNATURES = _signatures()
++
++
++@triton.jit
++def _reduce_kernel(src, plan, dst, N: tl.constexpr, START: tl.constexpr, BLOCK: tl.constexpr):
++    i = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
++    p = tl.load(plan + (START + i) // 16, i < N, other=0).to(tl.int32)
++    x0 = tl.load(src + i, i < N, other=0).to(tl.float32)
++    x1 = tl.load(src + N + i, i < N, other=0).to(tl.float32)
++    x2 = tl.load(src + 2 * N + i, i < N, other=0).to(tl.float32)
++    x3 = tl.load(src + 3 * N + i, i < N, other=0).to(tl.float32)
++    ia, ib, ic, id_ = p & 3, (p >> 2) & 3, (p >> 4) & 3, (p >> 6) & 3
++    a = tl.where(ia == 0, x0, tl.where(ia == 1, x1, tl.where(ia == 2, x2, x3)))
++    b = tl.where(ib == 0, x0, tl.where(ib == 1, x1, tl.where(ib == 2, x2, x3)))
++    c = tl.where(ic == 0, x0, tl.where(ic == 1, x1, tl.where(ic == 2, x2, x3)))
++    d = tl.where(id_ == 0, x0, tl.where(id_ == 1, x1, tl.where(id_ == 2, x2, x3)))
++    ab = (a + b).to(tl.bfloat16).to(tl.float32)
++    chain = (ab + c).to(tl.bfloat16).to(tl.float32) + d
++    cd = (c + d).to(tl.bfloat16).to(tl.float32)
++    out = tl.where((p & 256) != 0, ab + cd, chain)
++    tl.store(dst + i, out, i < N)
++
++
++def _agree(ok, group, device):
++    flag = torch.tensor(int(ok), dtype=torch.int32, device=device)
++    dist.all_reduce(flag, op=dist.ReduceOp.MIN, group=group)
++    return bool(flag.item())
++
++
++def _calibrate(x, group):
++    rank = dist.get_rank(group)
++    bits = []
++    constant = True
++    for values in _PROBES:
++        probe = torch.full_like(x, values[rank])
++        dist.all_reduce(probe, group=group)
++        words = probe.view(torch.int16).view(-1, 16)
++        constant = constant and bool((words == words[:, :1]).all().item())
++        bits.append(words[:, 0].clone())
++    plan = torch.full_like(bits[0], -1, dtype=torch.int16)
++    for i, (s0, s1) in enumerate(_SIGNATURES):
++        order = _ORDERS[i]
++        code = sum(value << (2 * j) for j, value in enumerate(order))
++        code |= 256 if i >= 12 else 0
++        plan[(bits[0] == s0) & (bits[1] == s1)] = code
++    if not _agree(constant and bool((plan >= 0).all().item()), group, x.device):
++        return None
++    return plan
++
++
++def _run(x, group, plan):
++    endpoint = _endpoint(x, group)
++    rank = endpoint.rank
++    flat = x.view(4, -1)
++    count = flat.shape[1]
++    received = torch.empty_like(flat)
++    received[rank].copy_(flat[rank])
++    endpoint.exchange(
++        {p: [flat[p]] for p in endpoint.peers},
++        {p: [received[p]] for p in endpoint.peers},
++    )
++    reduced = torch.empty_like(flat[rank])
++    _reduce_kernel[(triton.cdiv(count, 1024),)](
++        received, plan, reduced, count, rank * count, 1024,
++    )
++    out = torch.empty_like(x)
++    parts = out.view(4, -1)
++    parts[rank].copy_(reduced)
++    endpoint.exchange(
++        {p: [reduced] for p in endpoint.peers},
++        {p: [parts[p]] for p in endpoint.peers},
++    )
++    return out
++
++
++def preserving_all_reduce(x: torch.Tensor, group) -> torch.Tensor | None:
++    if x.numel() % 64:
++        return None
++    # Different NCCL communicators may use different reduction trees even when
++    # their global rank lists agree (e.g. folded encoder versus DiT TP).
++    key = (group, str(x.device), x.numel())
++    if key in _plans:
++        plan = _plans[key]
++        _plans.move_to_end(key)
++        return None if plan is None else _run(x, group, plan)
++    if len(_plans) >= _MAX_PLANS:
++        _plans.popitem(last=False)
++    plan = _calibrate(x, group)
++    if plan is None:
++        _plans[key] = None
++        logger.warning("H3 BF16 host sum: unknown NCCL reduction plan; keeping NCCL")
++        return None
++    expected = x.clone()
++    dist.all_reduce(expected, group=group)
++    actual = _run(x, group, plan)
++    exact = torch.equal(actual.view(torch.int16), expected.view(torch.int16))
++    if not _agree(exact, group, x.device):
++        _plans[key] = None
++        logger.warning("H3 BF16 host sum: NCCL byte check failed; keeping NCCL")
++        return expected
++    _plans[key] = plan
++    logger.info("H3 BF16 host sum: verified NCCL reduction order for %d elements", x.numel())
++    return actual
+diff --git a/python/sglang/multimodal_gen/runtime/entrypoints/utils.py b/python/sglang/multimodal_gen/runtime/entrypoints/utils.py
+--- a/python/sglang/multimodal_gen/runtime/entrypoints/utils.py
++++ b/python/sglang/multimodal_gen/runtime/entrypoints/utils.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+ 
+ # SPDX-License-Identifier: Apache-2.0
+@@ -1092,7 +1093,8 @@
+         # sample is raw tensor
+         if sample.dim() == 3:
+             sample = sample.unsqueeze(1)
+-        sample = (sample * 255).clamp(0, 255).to(torch.uint8)
++        if sample.dtype != torch.uint8:
++            sample = (sample * 255).clamp(0, 255).to(torch.uint8)
+         videos = sample.permute(1, 2, 3, 0).contiguous()
+         if videos.device.type == "cuda":
+             try:
+diff --git a/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn.py b/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn.py
+--- a/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn.py
++++ b/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn.py
+@@ -1,8 +1,10 @@
++# Modified by MiniMax-H3-Image-Accel.
+ # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+ 
+ # SPDX-License-Identifier: Apache-2.0
+ 
+ 
++import os
+ from functools import lru_cache
+ 
+ import torch
+@@ -67,9 +69,18 @@
+         self.causal = causal
+         self.softmax_scale = softmax_scale
+         self.dropout = extra_impl_args.get("dropout_p", 0.0)
++        h3_pv = os.environ.get("H3_OPT_SAGE2_PV", "auto")
++        if h3_pv not in ("auto", "fp16"):
++            raise ValueError("H3_OPT_SAGE2_PV must be auto or fp16")
++        self.h3_pv_fp16 = h3_pv == "fp16"
+         self.packed_trailing_padding = extra_impl_args.get(
+             "packed_trailing_padding", False
+         )
++        self.fp16_pv = os.environ.get("H3_OPT_SAGE_FP16_PV") == "1"
++        if (self.fp16_pv or self.h3_pv_fp16) and envs.SGLANG_USE_SAGE_ATTENTION_IMPL.get().lower() in {
++            "trtllm_gen", "trtllm-gen",
++        }:
++            raise ValueError("H3 Sage FP16-PV overrides require the CUDA SageAttention implementation")
+ 
+     def forward(
+         self,
+@@ -162,7 +173,22 @@
+         # SageAttention's public dispatcher does not yet select its FP8-PV
+         # kernel on sm100. The FP8 CUDA kernel is compiled for Blackwell and
+         # supports the same NHD layout used by this backend.
+-        if query.is_cuda and torch.cuda.get_device_capability(query.device)[0] == 10:
++        if self.h3_pv_fp16 or self.fp16_pv:
++            from sageattention import sageattn_qk_int8_pv_fp16_cuda
++
++            output = sageattn_qk_int8_pv_fp16_cuda(
++                query,
++                key,
++                value,
++                tensor_layout="NHD",
++                is_causal=self.causal,
++                sm_scale=self.softmax_scale,
++                return_lse=return_softmax_lse,
++                # Preserve each experiment's recorded Q/K quantization policy.
++                qk_quant_gran="per_thread" if self.h3_pv_fp16 else "per_warp",
++                pv_accum_dtype="fp32",
++            )
++        elif query.is_cuda and torch.cuda.get_device_capability(query.device)[0] == 10:
+             from sageattention import sageattn_qk_int8_pv_fp8_cuda
+ 
+             output = sageattn_qk_int8_pv_fp8_cuda(
+diff --git a/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn3.py b/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn3.py
+--- a/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn3.py
++++ b/python/sglang/multimodal_gen/runtime/layers/attention/backends/sage_attn3.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+ 
+ # SPDX-License-Identifier: Apache-2.0
+@@ -13,6 +14,7 @@
+ )
+ from sglang.multimodal_gen.runtime.platforms import AttentionBackendEnum
+ from sglang.multimodal_gen.runtime.utils.logging_utils import init_logger
++from sglang.multimodal_gen.runtime.layers.attention.backends.sage_attn import SageAttentionImpl
+ 
+ logger = init_logger(__name__)
+ 
+@@ -37,7 +39,7 @@
+         raise NotImplementedError
+ 
+ 
+-class SageAttention3Impl(AttentionImpl):
++class SageAttention3Impl(SageAttentionImpl):
+     _warned_gqa_fallback_global: bool = False
+ 
+     def __init__(
+@@ -53,6 +55,7 @@
+         self.causal = causal
+         self.softmax_scale = softmax_scale
+         self.dropout = extra_impl_args.get("dropout_p", 0.0)
++        self.packed_trailing_padding = extra_impl_args.get("packed_trailing_padding", False)
+ 
+     def forward(
+         self,
+@@ -60,7 +63,13 @@
+         key: torch.Tensor,
+         value: torch.Tensor,
+         attn_metadata: AttentionMetadata,
++        *,
++        return_softmax_lse: bool = False,
+     ) -> torch.Tensor:
++        if return_softmax_lse:
++            raise NotImplementedError("Sage3 packed H3 does not return LSE")
++        if query.shape[-1] != 128:
++            raise ValueError("Experimental H3 Sage3 requires head dimension 128")
+         query = query.transpose(1, 2)
+         key = key.transpose(1, 2)
+         value = value.transpose(1, 2)
+diff --git a/python/sglang/multimodal_gen/runtime/layers/quantization/fp8.py b/python/sglang/multimodal_gen/runtime/layers/quantization/fp8.py
+--- a/python/sglang/multimodal_gen/runtime/layers/quantization/fp8.py
++++ b/python/sglang/multimodal_gen/runtime/layers/quantization/fp8.py
+@@ -1,6 +1,8 @@
++# Modified by MiniMax-H3-Image-Accel.
+ from __future__ import annotations
+ 
+ import logging
++import os
+ from typing import TYPE_CHECKING, List, Optional, Union
+ 
+ import torch
+@@ -15,6 +17,7 @@
+ from sglang.kernels.ops.quantization.fp8_kernel import (
+     is_fp8_fnuz,
+     per_token_group_quant_fp8,
++    sglang_per_token_quant_fp8,
+ )
+ from sglang.kernels.ops.quantization.per_token_quant_fp8_gfx1250 import (
+     per_token_quant_fp8_gfx1250,
+@@ -88,6 +91,11 @@
+ 
+ 
+ logger = logging.getLogger(__name__)
++
++# cuBLASLt's row-wise FP8 GEMM beats the CUTLASS kernel on SM89 when the
++# output is no wider than the input (H3's out_proj and fc2), mostly at the
++# small row counts of a sequence-parallel shard. It uses fast accumulation.
++_H3_CUBLASLT_FP8 = os.environ.get("H3_OPT_FP8_CUBLASLT", "0") == "1"
+ 
+ 
+ def _apply_gfx1250_triton_fp8(
+@@ -544,6 +552,45 @@
+         # diffusion backbones routinely pass a permuted view. Normalising at the
+         # producer instead would also move the unquantized path's output, by
+         # changing which GEMM kernel it picks. No-op when already contiguous.
++        if (
++            _H3_CUBLASLT_FP8
++            and bias is None
++            and not (self.block_quant or self.use_marlin or self.per_channel_serialized)
++            and not self.use_gfx1250_triton_fp8
++            and layer.weight.dtype == torch.float8_e4m3fn
++            and layer.weight.shape[1] <= layer.weight.shape[0]
++            and layer.weight_scale.numel() == layer.weight.shape[1]
++        ):
++            if isinstance(x, tuple):
++                qinput, x_scale = x
++                lead = qinput.shape[:-1]
++            else:
++                lead = x.shape[:-1]
++                qinput, x_scale = sglang_per_token_quant_fp8(
++                    x.reshape(-1, x.shape[-1]).contiguous()
++                )
++            output = torch._scaled_mm(
++                qinput.view(-1, qinput.shape[-1]),
++                layer.weight,
++                scale_a=x_scale.view(-1, 1),
++                scale_b=layer.weight_scale.view(1, -1),
++                out_dtype=layer.orig_dtype,
++                use_fast_accum=True,
++            )
++            return output.view(*lead, layer.weight.shape[1])
++        if isinstance(x, tuple) and not (self.block_quant or self.use_marlin):
++            # (E4M3 rows, per-row scale) quantized by the producer with this
++            # method's own dynamic per-token rule.
++            return apply_fp8_linear(
++                input=x[0],
++                weight=layer.weight,
++                weight_scale=layer.weight_scale,
++                input_scale=x[1],
++                bias=bias,
++                cutlass_fp8_supported=self.cutlass_fp8_supported,
++                use_per_token_if_dynamic=False,
++                pre_quant_output_dtype=layer.orig_dtype,
++            )
+         if not x.is_contiguous():
+             x = x.contiguous()
+ 
+diff --git a/python/sglang/multimodal_gen/runtime/layers/quantization/mxfp8_online.py b/python/sglang/multimodal_gen/runtime/layers/quantization/mxfp8_online.py
+--- a/python/sglang/multimodal_gen/runtime/layers/quantization/mxfp8_online.py
++++ b/python/sglang/multimodal_gen/runtime/layers/quantization/mxfp8_online.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Online MXFP8 for diffusion linears: ``--quantization mxfp8`` on a bf16 checkpoint.
+ 
+ Weights quantize at load to e4m3 with one E8M0 scale per 32 elements along K
+@@ -48,6 +49,47 @@
+     )
+ 
+ 
++@torch.library.custom_op("sglang_h3opt::mxfp8_linear", mutates_args=())
++def _compiled_mxfp8_linear(
++    x: torch.Tensor,
++    weight: torch.Tensor,
++    weight_scale: torch.Tensor,
++    bias: Optional[torch.Tensor],
++) -> torch.Tensor:
++    """Preserve the eager Triton/CUBLASLt kernels across Dynamo tracing."""
++    a, scale = mxfp8_quantize_swizzled(x.reshape(-1, x.shape[-1]).contiguous())
++    result = mxfp8_scaled_mm(
++        a, scale.view(_E8M0), weight, weight_scale,
++        bias=bias, output_dtype=x.dtype,
++    )
++    return result.view(*x.shape[:-1], weight.shape[0])
++
++
++@_compiled_mxfp8_linear.register_fake
++def _compiled_mxfp8_linear_fake(x, weight, weight_scale, bias):
++    return x.new_empty((*x.shape[:-1], weight.shape[0]))
++
++
++@torch.library.custom_op("sglang_h3opt::mxfp8_prequant_gemm", mutates_args=())
++def _compiled_mxfp8_gemm(
++    a: torch.Tensor,
++    a_scale: torch.Tensor,
++    weight: torch.Tensor,
++    weight_scale: torch.Tensor,
++    bias: Optional[torch.Tensor],
++) -> torch.Tensor:
++    result = mxfp8_scaled_mm(
++        a.reshape(-1, a.shape[-1]), a_scale.view(_E8M0), weight, weight_scale,
++        bias=bias, output_dtype=torch.bfloat16,
++    )
++    return result.view(*a.shape[:-1], weight.shape[0])
++
++
++@_compiled_mxfp8_gemm.register_fake
++def _compiled_mxfp8_gemm_fake(a, a_scale, weight, weight_scale, bias):
++    return a.new_empty((*a.shape[:-1], weight.shape[0]), dtype=torch.bfloat16)
++
++
+ class MXFP8OnlineLinearMethod(Fp8LinearMethod):
+     def __init__(self, quant_config) -> None:
+         super().__init__(quant_config)
+@@ -80,6 +122,10 @@
+     ) -> torch.Tensor:
+         if not layer.mxfp8:
+             return super().apply(layer, x, bias)
++        if torch.compiler.is_compiling():
++            if isinstance(x, tuple):
++                return _compiled_mxfp8_gemm(x[0], x[1], layer.weight, layer.weight_scale, bias)
++            return _compiled_mxfp8_linear(x, layer.weight, layer.weight_scale, bias)
+         if isinstance(x, tuple):
+             a, a_scale = x
+             a_scale = a_scale.view(_E8M0)
+diff --git a/python/sglang/multimodal_gen/runtime/layers/usp.py b/python/sglang/multimodal_gen/runtime/layers/usp.py
+--- a/python/sglang/multimodal_gen/runtime/layers/usp.py
++++ b/python/sglang/multimodal_gen/runtime/layers/usp.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+ 
+ import contextlib
+@@ -133,6 +134,13 @@
+         output = torch.empty_like(x)
+     else:
+         output = _a2a_staging_buffer(role, x.shape, x.dtype, x.device)
++
++    from sglang.multimodal_gen.runtime.distributed.h3_lossless_collectives import (
++        host_all_to_all,
++    )
++
++    if not _UNCACHED_STAGING and host_all_to_all(x, output, ulysses_pg):
++        return output.reshape(x_shape)
+ 
+     # USP calls this collective many times per denoising step and waits
+     # immediately, so avoid the extra wrapper overhead of functional collectives.
+diff --git a/python/sglang/multimodal_gen/runtime/loader/component_loaders/text_encoder_loader.py b/python/sglang/multimodal_gen/runtime/loader/component_loaders/text_encoder_loader.py
+--- a/python/sglang/multimodal_gen/runtime/loader/component_loaders/text_encoder_loader.py
++++ b/python/sglang/multimodal_gen/runtime/loader/component_loaders/text_encoder_loader.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ import os
+ import re
+ from collections.abc import Generator
+@@ -736,6 +737,11 @@
+ 
+             if component_starts_on_cpu and (
+                 current_platform.is_mps()
++                or (
++                    model_cls.__name__ == "MiniMaxH3Qwen3VLEncoder"
++                    and quant_config is None
++                    and os.environ.get("H3_OPT_ENCODER_MMAP") == "1"
++                )
+                 or keep_checkpoint_mapped(
+                     weight_bytes=checkpoint_bytes(model_path), component=component_name
+                 )
+diff --git a/python/sglang/multimodal_gen/runtime/loader/component_loaders/transformer_loader.py b/python/sglang/multimodal_gen/runtime/loader/component_loaders/transformer_loader.py
+--- a/python/sglang/multimodal_gen/runtime/loader/component_loaders/transformer_loader.py
++++ b/python/sglang/multimodal_gen/runtime/loader/component_loaders/transformer_loader.py
+@@ -1,5 +1,7 @@
++# Modified by MiniMax-H3-Image-Accel.
+ import copy
+ import logging
++import os
+ from collections.abc import Callable
+ from contextlib import nullcontext
+ from typing import Any
+@@ -512,18 +514,36 @@
+ 
+         local_torch_device = get_local_torch_device()
+         layerwise_postprocess_device = None
++        layerwise_resident = False
+         if (
+-            component_starts_on_cpu
+-            and not use_fsdp
++            not use_fsdp
+             and local_torch_device.type == "cuda"
+             and runtime_quant_config is not None
+-            and runtime_quant_config.get_name() in ("fp8", "mxfp8")
+-            and not runtime_quant_config.is_checkpoint_fp8_serialized
++            and runtime_quant_config.get_name() in ("fp8", "mxfp8", "convrot_int8")
++            and not getattr(runtime_quant_config, "is_checkpoint_fp8_serialized", False)
++            and not getattr(runtime_quant_config, "is_checkpoint_int8_serialized", False)
+         ):
+-            layerwise_postprocess_device = local_torch_device
++            layerwise_resident = (
++                not component_starts_on_cpu
++                and model_cls.__name__ == "MiniMaxH3DiTModel"
++                and (
++                    os.environ.get("H3_OPT_LAYERWISE_QUANT_LOAD") == "1"
++                    or (
++                        runtime_quant_config.get_name() in ("fp8", "mxfp8")
++                        and os.environ.get("H3_OPT_LAYERWISE_FP8_LOAD") == "1"
++                    )
++                )
++            )
++            if component_starts_on_cpu or layerwise_resident:
++                layerwise_postprocess_device = local_torch_device
++            if layerwise_resident:
++                logger.info(
++                    "Staging H3 %s weight conversion one linear at a time",
++                    runtime_quant_config.get_name().upper(),
++                )
+         checkpoint_load_device = (
+             torch.device("cpu")
+-            if cpu_offload_flag
++            if cpu_offload_flag or layerwise_resident
+             else _resolve_checkpoint_load_device(
+                 local_torch_device,
+                 component_starts_on_cpu=component_starts_on_cpu,
+@@ -551,6 +571,7 @@
+             needs_device_weight_postprocess=quant_spec.needs_device_weight_postprocess,
+             component_starts_on_cpu=component_starts_on_cpu,
+             layerwise_postprocess_device=layerwise_postprocess_device,
++            layerwise_resident=layerwise_resident,
+             load_full_state_dict_on_device=direct_gpu_weight_loading,
+             mps_layerwise_cpu_staging=bool(
+                 cpu_offload_flag and current_platform.is_mps()
+diff --git a/python/sglang/multimodal_gen/runtime/loader/fsdp_load.py b/python/sglang/multimodal_gen/runtime/loader/fsdp_load.py
+--- a/python/sglang/multimodal_gen/runtime/loader/fsdp_load.py
++++ b/python/sglang/multimodal_gen/runtime/loader/fsdp_load.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ # Copied and adapted from: https://github.com/hao-ai-lab/FastVideo
+ 
+ # SPDX-License-Identifier: Apache-2.0
+@@ -495,10 +496,12 @@
+         # move to device to perform postprocessing
+         _move_to_device_preserving_meta(model, weight_postprocess_device)
+ 
+-    process_model_weights_after_loading(
+-        model,
+-        None if use_fsdp else weight_load_plan.layerwise_postprocess_device,
+-    )
++    layerwise_device = None if use_fsdp else weight_load_plan.layerwise_postprocess_device
++    if weight_load_plan.layerwise_resident and layerwise_device is not None:
++        process_model_weights_after_loading(model, layerwise_device, keep_on_device=True)
++        _move_to_device_preserving_meta(model, layerwise_device)
++    else:
++        process_model_weights_after_loading(model, layerwise_device)
+     model.post_load_weights()
+ 
+     finalize_loaded_model(model)
+diff --git a/python/sglang/multimodal_gen/runtime/loader/weight_load_plan.py b/python/sglang/multimodal_gen/runtime/loader/weight_load_plan.py
+--- a/python/sglang/multimodal_gen/runtime/loader/weight_load_plan.py
++++ b/python/sglang/multimodal_gen/runtime/loader/weight_load_plan.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ from dataclasses import dataclass
+ 
+ import torch
+@@ -13,6 +14,8 @@
+     weight_postprocess_device: torch.device | None = None
+     # Stage one module at a time when quantizing CPU-resident weights.
+     layerwise_postprocess_device: torch.device | None = None
++    # Keep each processed module on the device for a resident server.
++    layerwise_resident: bool = False
+     # mps layerwise loading retains compatible safetensors tensors as CPU-backed
+     # parameters instead of materializing a second unified-memory copy
+     mps_layerwise_cpu_staging: bool = False
+@@ -31,6 +34,7 @@
+         load_full_state_dict_on_device: bool = False,
+         mps_layerwise_cpu_staging: bool = False,
+         layerwise_postprocess_device: torch.device | None = None,
++        layerwise_resident: bool = False,
+     ) -> "WeightLoadPlan":
+         # if on-device weight postprocessing is required, load directly to device to speedup loading
+         weight_postprocess_device = (
+@@ -42,6 +46,7 @@
+             checkpoint_load_device=checkpoint_load_device,
+             weight_postprocess_device=weight_postprocess_device,
+             layerwise_postprocess_device=layerwise_postprocess_device,
++            layerwise_resident=layerwise_resident,
+             defer_cpu_placement=(
+                 needs_device_weight_postprocess
+                 and component_starts_on_cpu
+diff --git a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py
+--- a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py
++++ b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """MiniMax H3 packed-token DiT.
+ 
+ Native SGLang implementation of the MiniMax H3 audio-video DiT. The forward
+@@ -51,6 +52,8 @@
+     can_use_mxfp8_swizzled,
+ )
+ from sglang.multimodal_gen import envs
++from sglang.multimodal_gen.runtime.models.dits import minimax_h3_prof as _prof
++from sglang.multimodal_gen.runtime.models.dits import minimax_h3_qulysses as _qulysses
+ from sglang.multimodal_gen.configs.models.dits.minimax_h3 import (
+     MINIMAX_H3_ADALN_MODALITY_NUM,
+     MINIMAX_H3_PACKED_SEQUENCE_ALIGNMENT,
+@@ -1543,6 +1546,7 @@
+ 
+         total = x.shape[0]
+         qkv, _ = self.qkv_proj(x if x_prequant is None else x_prequant)
++        _prof.mark("qkv")
+         q, k, v = qkv.split(self.local_inner_dim, dim=-1)
+         q = q.view(total, self.num_heads, self.head_dim)
+         k = k.view(total, self.num_heads, self.head_dim)
+@@ -1565,6 +1569,40 @@
+                 ulysses_active=ulysses_active,
+                 ring_active=ring_active,
+             )
++        if (
++            _qulysses.ENABLED
++            and ulysses_active
++            and not ring_active
++            and rope_cache is not None
++            and self._use_fused_qknorm_rope
++            and self._attention_backend_enum_is_sage(q.dtype)
++            and not torch.compiler.is_compiling()
++            and not torch.cuda.is_current_stream_capturing()
++        ):
++            used = _qulysses.eligible(self, q, cu_seqlens_host, max_seqlen)
++            if used is not None:
++                cos_sin_cache, positions = rope_cache
++                fused_inplace_qknorm_rope(
++                    q,
++                    k,
++                    self.q_norm.weight,
++                    self.k_norm.weight,
++                    cos_sin_cache,
++                    positions,
++                    is_neox=True,
++                    eps=self.q_norm.eps,
++                    head_dim=self.head_dim,
++                    rope_dim=cos_sin_cache.shape[-1],
++                    round_norm_before_rope=True,
++                )
++                _prof.mark("qknorm_rope")
++                out, _ = self.out_proj(
++                    _qulysses.quantized_ulysses_attention(
++                        q, k, v, used=used, sm_scale=self.softmax_scale
++                    )
++                )
++                _prof.mark("out_proj")
++                return out
+         # The fused qk-norm/RoPE, pipelined Ulysses exchange and attention kernels
+         # are untraceable, and the traceable fallback is slower than eager, so a
+         # compiled DiT runs this section eager and compiles around it.
+@@ -1582,8 +1620,14 @@
+             ulysses_active=ulysses_active,
+             ring_active=ring_active,
+         )
++        _prof.mark("attend")
+         out, _ = self.out_proj(out)
++        _prof.mark("out_proj")
+         return out
++
++    def _attention_backend_enum_is_sage(self, dtype: torch.dtype) -> bool:
++        _minimax_h3_bind_attention_backend(self, dtype)
++        return self._attention_backend_enum is AttentionBackendEnum.SAGE_ATTN
+ 
+     def _attend(
+         self,
+@@ -1725,11 +1769,17 @@
+                 torch.mps.empty_cache()
+             return out
+         hidden, _ = self.fc1(x)
++        _prof.mark("fc1")
+         if _accepts_mxfp8_input(self.fc2) and can_use_silu_mul_mxfp8(hidden):
+-            out, _ = self.fc2(silu_mul_mxfp8(hidden))
++            hidden = silu_mul_mxfp8(hidden)
++            _prof.mark("silu_mul")
++            out, _ = self.fc2(hidden)
++            _prof.mark("fc2")
+             return out
+         hidden = _silu_mul(hidden, reuse_input=self.reuse_fc1_activation)
++        _prof.mark("silu_mul")
+         out, _ = self.fc2(hidden)
++        _prof.mark("fc2")
+         return out
+ 
+ 
+@@ -1962,6 +2012,7 @@
+                 dtype=_BF16_DTYPE,
+                 fused=MINIMAX_H3_NORM_MODULATE.is_enabled(self),
+             )
++        _prof.mark("norm_mod")
+         h = self.attn(
+             h,
+             x_prequant=h_prequant,
+@@ -1981,6 +2032,7 @@
+             dtype=_BF16_DTYPE,
+             allow_inplace=not self.preserve_input_for_cache_dit,
+         )
++        _prof.mark("gate")
+ 
+         residual = x
+         if _accepts_mxfp8_input(self.mlp.fc1):
+@@ -1989,11 +2041,13 @@
+                 _, h_fp8, h_scales = indexed_scale_shift_mxfp8_(
+                     h, shift_mlp, scale_mlp, combined_indices, keep_bf16=False
+                 )
++                _prof.mark("norm_mod")
+                 h = self.mlp((h_fp8, h_scales))
+             else:
+                 h = _modulate_scale_shift(
+                     h, shift_mlp, scale_mlp, combined_indices, dtype=_BF16_DTYPE
+                 )
++                _prof.mark("norm_mod")
+                 h = self.mlp(h)
+         else:
+             h = _modulate_rmsnorm_scale_shift(
+@@ -2005,16 +2059,19 @@
+                 dtype=_BF16_DTYPE,
+                 fused=MINIMAX_H3_NORM_MODULATE.is_enabled(self),
+             )
++            _prof.mark("norm_mod")
+             h = self.mlp(h)
+         # `residual` is block-local here (see above), so this stays in-place
+         # even while Cache-DiT is attached.
+-        return _modulate_gate(
++        out = _modulate_gate(
+             residual,
+             gate_mlp,
+             h,
+             combined_indices,
+             dtype=_BF16_DTYPE,
+         )
++        _prof.mark("gate")
++        return out
+ 
+ 
+ def _fp32_param_names_in_model_order(arch: MiniMaxH3DiTArchConfig) -> list[str]:
+@@ -2149,7 +2206,23 @@
+                 heads[f"{name}.bias"].to(device=h.device, dtype=h.dtype),
+             )
+         weight, bias = self._pdd_device_heads[key]
+-        result = torch.nn.functional.linear(h, weight[step], bias[step])
++        intervals = getattr(self, "_h3_opt_merged_ranges", None)
++        deltas = None if intervals is None else intervals.get(step)
++        if deltas is not None and len(deltas) > 1:
++            from sglang.multimodal_gen.runtime.models.dits.minimax_h3_opt import fuse_velocity_heads
++            merged = getattr(self, "_h3_opt_merged_cache", None)
++            if merged is None:
++                self._h3_opt_merged_cache = merged = {}
++            merged_key = (key, step, deltas)
++            if merged_key not in merged:
++                if len(merged) >= 16:
++                    merged.clear()
++                merged[merged_key] = fuse_velocity_heads(
++                    weight[step:step+len(deltas)], bias[step:step+len(deltas)], deltas
++                )
++            result = torch.nn.functional.linear(h, *merged[merged_key])
++        else:
++            result = torch.nn.functional.linear(h, weight[step], bias[step])
+         if out is None:
+             return result
+         out.copy_(result)
+@@ -2256,7 +2329,11 @@
+     # heads) with bf16 blocks; FSDP must gather in each parameter's own dtype
+     _fsdp_mixed_dtype_params = True
+     mps_stream_non_layer_weights = True
+-    _compile_conditions = (is_block,)
++    # Compile the repeated denoiser, not the once-per-request text refiner.
++    _compile_conditions = (
++        lambda name, module: name.startswith("blocks.")
++        and isinstance(module, MiniMaxH3DiTBlock),
++    )
+     param_names_mapping = _ARCH_DEFAULTS.param_names_mapping
+     reverse_param_names_mapping = _ARCH_DEFAULTS.reverse_param_names_mapping
+     lora_param_names_mapping = _ARCH_DEFAULTS.lora_param_names_mapping
+@@ -2504,18 +2581,24 @@
+     ) -> None:
+         super().__init__(config=config, hf_config=hf_config)
+         arch = self.config
++        quant_name = quant_config.get_name() if quant_config is not None else None
++        serialized_attr = (
++            "is_checkpoint_int8_serialized"
++            if quant_name == "convrot_int8"
++            else "is_checkpoint_fp8_serialized"
++        )
+         if (
+             (adaln_cache_path is not None or adaln_weight_files is not None)
+             and quant_config is not None
+             and not (
+                 adaln_cache_path is None
+-                and quant_config.get_name() in ("fp8", "mxfp8")
+-                and not getattr(quant_config, "is_checkpoint_fp8_serialized", True)
++                and quant_name in ("fp8", "mxfp8", "convrot_int8")
++                and not getattr(quant_config, serialized_attr, True)
+             )
+         ):
+             raise ValueError(
+                 "MiniMax H3 AdaLN cache requires unquantized weights or online "
+-                "FP8 with AdaLN rebuilt from native checkpoint weights"
++                "FP8/ConvRot INT8 with AdaLN rebuilt from native checkpoint weights"
+             )
+         if arch.adaln_curve_grid is not None and (
+             adaln_cache_path is not None or adaln_weight_files is not None
+@@ -3331,6 +3414,13 @@
+         cu_seqlens = cu_seqlens.to(device)
+         spectrum_on = self._h3_spectrum_requested(sp_ws=sp_ws)
+         run_transformer_blocks = self.begin_spectrum_step() if spectrum_on else True
++        image_opt = getattr(self, "_h3_image_opt_state", None)
++        if image_opt is not None:
++            if spectrum_on:
++                raise ValueError("h3_opt cannot be combined with Spectrum")
++            run_transformer_blocks, hidden = image_opt.begin(
++                hidden, int(get_forward_context().current_timestep)
++            )
+         if spectrum_on:
+             try:
+                 timestep = get_forward_context().current_timestep
+@@ -3374,6 +3464,7 @@
+             # (Ulysses) and/or ring-rotates KV across ring ranks; everything
+             # else, including the final layer, is row-local. Only the narrow
+             # video/audio logits are gathered after the final layer.
++            _prof.start()
+             for index, block in enumerate(self.blocks):
+                 hidden = block(
+                     hidden,
+@@ -3392,6 +3483,9 @@
+                         else block_adaln_params[index]
+                     ),
+                 )
++            _prof.flush(hidden.shape[0])
++            if image_opt is not None:
++                image_opt.finish(hidden)
+             if spectrum_on:
+                 self._h3_spectrum_record_targets(
+                     hidden, audio_pos, infer_out_pos, row_start, row_stop
+diff --git a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_opt.py b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_opt.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_opt.py
+@@ -0,0 +1,141 @@
++"""Explicit, request-scoped H3 image approximations.
++
++Default requests retain the original six-step path. Sparse schedules keep the
++original PDD head indices and advance by the corresponding sigma distance;
++they are approximations, not replacement distilled weights.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++import logging
++import math
++from typing import Any
++
++import torch
++import torch.distributed as dist
++
++logger = logging.getLogger(__name__)
++
++
++def validate_h3_opt(value: dict[str, Any] | None, total_steps: int = 6) -> dict[str, Any]:
++    if value is None:
++        return {}
++    if not isinstance(value, dict):
++        raise ValueError("h3_opt must be a JSON object")
++    allowed = {"steps", "merge_heads", "prefix_kv", "tea_threshold", "tea_max_skip", "tea_warmup", "reuse_steps"}
++    unknown = set(value) - allowed
++    if unknown:
++        raise ValueError(f"Unknown h3_opt options: {sorted(unknown)}")
++    cfg = dict(value)
++    if "prefix_kv" in cfg and type(cfg["prefix_kv"]) is not bool:
++        raise ValueError("prefix_kv must be boolean")
++    if "merge_heads" in cfg and type(cfg["merge_heads"]) is not bool:
++        raise ValueError("merge_heads must be boolean")
++    if cfg.get("merge_heads") and "steps" not in cfg:
++        raise ValueError("merge_heads requires an explicit sparse steps schedule")
++    if "steps" in cfg:
++        steps = cfg["steps"]
++        if (
++            not isinstance(steps, list)
++            or any(type(i) is not int for i in steps)
++            or len(steps) < 2
++            or steps != sorted(set(steps))
++            or steps[0] != 0
++            or steps[-1] != total_steps - 1
++        ):
++            raise ValueError(f"h3_opt.steps must increase from 0 to {total_steps - 1}")
++    threshold = cfg.get("tea_threshold", 0.0)
++    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not math.isfinite(threshold) or threshold < 0:
++        raise ValueError("tea_threshold must be a finite non-negative number")
++    for name, default in (("tea_max_skip", 1), ("tea_warmup", 2)):
++        n = cfg.get(name, default)
++        if type(n) is not int or not 1 <= n <= total_steps:
++            raise ValueError(f"{name} must be an integer in [1, {total_steps}]")
++    reuse = cfg.get("reuse_steps", [])
++    if not isinstance(reuse, list) or any(type(i) is not int or not 1 <= i < total_steps - 1 for i in reuse):
++        raise ValueError("reuse_steps may contain only interior original step indices")
++    if len(reuse) != len(set(reuse)):
++        raise ValueError("reuse_steps must be unique")
++    return cfg
++
++
++def fuse_velocity_heads(weight: torch.Tensor, bias: torch.Tensor, deltas: tuple[float, ...]):
++    """Fuse linear Euler heads under a shared-hidden-state approximation."""
++    scale = torch.tensor(deltas, device=weight.device, dtype=torch.float32)
++    scale = scale / scale.sum()
++    w = (weight.float() * scale[:, None, None]).sum(dim=0).to(weight.dtype)
++    b = (bias.float() * scale[:, None]).sum(dim=0).to(bias.dtype)
++    return w, b
++
++
++@dataclass
++class H3ImageOptState:
++    cfg: dict[str, Any]
++    selected_steps: list[int]
++    target_start: int
++    target_stop: int
++    residual: torch.Tensor | None = None
++    previous_sample: torch.Tensor | None = None
++    full_input: torch.Tensor | None = None
++    accumulated_change: float = 0.0
++    skipped: int = 0
++    full_passes: int = 0
++    reused_passes: int = 0
++    relative_changes: list[float] = field(default_factory=list)
++
++    def begin(self, hidden: torch.Tensor, step: int) -> tuple[bool, torch.Tensor]:
++        """TeaCache-style cumulative relative-L1 gating over target input rows.
++
++        This image-specific gate is intentionally uncalibrated by a video-model
++        polynomial. Thresholds are measured on matched image outputs.
++        """
++        threshold = float(self.cfg.get("tea_threshold", 0.0))
++        forced = step in self.cfg.get("reuse_steps", ())
++        warmup = int(self.cfg.get("tea_warmup", 2))
++        last = step == self.selected_steps[-1]
++        can_reuse = self.residual is not None and self.full_passes >= warmup and not last
++        reuse = False
++        relative_change = None
++        if threshold > 0:
++            # Sample deterministic channels/rows, excluding text, references,
++            # and alignment padding. The scalar gate is synchronized globally.
++            sample = hidden[self.target_start:self.target_stop:4, ::16].float()
++            if self.previous_sample is not None:
++                change = (sample - self.previous_sample).abs().sum()
++                magnitude = self.previous_sample.abs().sum()
++                stats = torch.stack((change, magnitude))
++                if dist.is_initialized() and dist.get_world_size() > 1:
++                    dist.all_reduce(stats)
++                relative_change = float((stats[0] / stats[1].clamp_min(1e-8)).item())
++                self.accumulated_change += relative_change
++                self.relative_changes.append(round(relative_change, 6))
++            self.previous_sample = sample.detach()
++            reuse = can_reuse and self.accumulated_change < threshold
++        reuse = can_reuse and (
++            forced or (reuse and self.skipped < int(self.cfg.get("tea_max_skip", 1)))
++        )
++        if reuse:
++            self.skipped += 1
++            self.reused_passes += 1
++            return False, (hidden.float() + self.residual).to(hidden.dtype)
++        self.accumulated_change = 0.0
++        self.skipped = 0
++        # H3's fused residual writes its input in place, so retain a distinct
++        # copy before the first block, not a detached view of the same storage.
++        self.full_input = hidden.clone()
++        self.full_passes += 1
++        return True, hidden
++
++    def finish(self, hidden: torch.Tensor) -> None:
++        if self.full_input is None:
++            raise RuntimeError("H3 residual cache did not capture an independent input")
++        self.residual = hidden.float() - self.full_input.float()
++        self.full_input = None
++
++    def release(self) -> None:
++        self.residual = self.previous_sample = self.full_input = None
++        if not dist.is_initialized() or dist.get_rank() == 0:
++            logger.info(
++                "H3_OPT steps=%s full_DiT_passes=%d residual_reuses=%d relative_changes=%s config=%s",
++                self.selected_steps, self.full_passes, self.reused_passes, self.relative_changes, self.cfg,
++            )
+diff --git a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_prof.py b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_prof.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_prof.py
+@@ -0,0 +1,48 @@
++"""Opt-in synchronized segment timer for the H3 DiT block stack.
++
++Set H3_OPT_BLOCK_PROFILE=1 to log, per DiT forward, the CUDA-synchronized
++wall time of each block segment. Synchronization removes compute/collective
++overlap, so use it for attribution only and never for latency claims.
++"""
++
++from __future__ import annotations
++
++import logging
++import os
++import time
++from collections import defaultdict
++
++import torch
++
++logger = logging.getLogger(__name__)
++
++ENABLED = os.environ.get("H3_OPT_BLOCK_PROFILE", "0") == "1"
++_acc: dict[str, float] = defaultdict(float)
++_last = 0.0
++
++
++def start() -> None:
++    global _last
++    if ENABLED:
++        torch.cuda.synchronize()
++        _last = time.perf_counter()
++
++
++def mark(name: str) -> None:
++    global _last
++    if ENABLED:
++        torch.cuda.synchronize()
++        now = time.perf_counter()
++        _acc[name] += now - _last
++        _last = now
++
++
++def flush(rows: int) -> None:
++    if ENABLED and _acc:
++        total = sum(_acc.values())
++        parts = " ".join(
++            f"{k}={v * 1e3:.1f}"
++            for k, v in sorted(_acc.items(), key=lambda kv: -kv[1])
++        )
++        logger.info("H3_PROF rows=%d total_ms=%.1f %s", rows, total * 1e3, parts)
++        _acc.clear()
+diff --git a/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_qulysses.py b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_qulysses.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/models/dits/minimax_h3_qulysses.py
+@@ -0,0 +1,403 @@
++"""Quantize-before-exchange Ulysses attention for H3 on SM89 (L20/L40/RTX 40).
++
++SageAttention2 turns Q/K into INT8 and V into FP8 on the rank that attends,
++and the FP8 output projection turns the attention output into per-row FP8 on
++the rank that owns the rows. The stock Ulysses path therefore ships BF16
++tensors across the group only to quantize them on arrival. Here each rank
++quantizes its own row shard first, so both exchanges carry one byte per
++element, and the bytes travel over the page-locked host exchange.
++
++Arithmetic contract (all ranks see the same statistics, so the result does
++not depend on how rows are sharded):
++
++* K smoothing mean and the per-channel V range come from one small exchange
++  of per-rank sums/extrema. The mean is kept in FP32 (Sage rounds it to BF16).
++* Q/K use Sage's per-thread INT8 groups. A shard is a multiple of 64 rows, so
++  every group lives on one rank and its scale equals the full-sequence scale.
++* V uses Sage's per-channel FP8 scale (range / 2.25 for the FP16 accumulator).
++* The output is per-row FP8 for the FP8 output projection. Each rank scales
++  its heads of a row by a power of two; the owner of the row moves the four
++  parts to the largest of those scales, which only shifts E4M3 exponents, so
++  no statistics exchange is needed and every part keeps its 3-bit mantissa.
++
++The attention itself is Sage's unmodified SM89 kernel.
++"""
++
++from __future__ import annotations
++
++import os
++
++import torch
++import triton
++import triton.language as tl
++
++from sglang.multimodal_gen.runtime.distributed.h3_host_exchange import (
++    get_host_exchange,
++)
++from sglang.multimodal_gen.runtime.distributed.parallel_state import (
++    get_sp_group,
++    get_ulysses_ctx,
++)
++from sglang.multimodal_gen.runtime.models.dits import minimax_h3_prof as _prof
++
++ENABLED = os.environ.get("H3_OPT_QUANT_ULYSSES", "0") == "1"
++ROW_ALIGNMENT = 64
++_V_SCALE_MAX = 2.25
++_STATS_SPAN = 256
++_PERMUTE = (0, 1, 8, 9, 2, 3, 10, 11, 4, 5, 12, 13, 6, 7, 14, 15)
++
++
++@triton.jit
++def _quant_q_kernel(
++    x_ptr, out_ptr, scale_ptr, live_rows,
++    stride_xr, stride_xh, stride_od, stride_or, stride_oh, stride_sd,
++    HD: tl.constexpr, C: tl.constexpr,
++):
++    pid = tl.program_id(0)
++    head = tl.program_id(1)
++    rows = (pid // 8) * 32 + tl.arange(0, 4) * 8 + pid % 8
++    cols = tl.arange(0, C)
++    live = rows[:, None] < live_rows
++    x = tl.load(
++        x_ptr + rows[:, None] * stride_xr + head * stride_xh + cols[None, :],
++        mask=live, other=0.0,
++    ).to(tl.float32)
++    scale = tl.max(tl.abs(x)) / 127.0 + 0.0000001
++    y = x / scale
++    y += 0.5 * tl.where(y >= 0, 1, -1)
++    dest = head // HD
++    local = head % HD
++    tl.store(
++        out_ptr + dest * stride_od + rows[:, None] * stride_or + local * stride_oh + cols[None, :],
++        y.to(tl.int8),
++    )
++    tl.store(scale_ptr + dest * stride_sd + pid * HD + local, scale)
++
++
++@triton.jit
++def _quant_k_kernel(
++    x_ptr, stats_ptr, out_ptr, scale_ptr, live_rows, used_rows,
++    stride_xr, stride_xh, stride_od, stride_or, stride_oh, stride_sd,
++    HD: tl.constexpr, C: tl.constexpr, H: tl.constexpr, W: tl.constexpr,
++):
++    pid = tl.program_id(0)
++    head = tl.program_id(1)
++    index = tl.arange(0, 16)
++    rows = (pid // 4) * 64 + (index // 2) * 8 + (pid % 4) * 2 + index % 2
++    cols = tl.arange(0, C)
++    live = rows[:, None] < live_rows
++    x = tl.load(
++        x_ptr + rows[:, None] * stride_xr + head * stride_xh + cols[None, :],
++        mask=live, other=0.0,
++    ).to(tl.float32)
++    mean = tl.zeros([C], dtype=tl.float32)
++    for rank in tl.static_range(W):
++        mean += tl.load(stats_ptr + rank * 2 * H * C + head * C + cols)
++    mean = mean / used_rows
++    x = tl.where(live, x - mean[None, :], 0.0)
++    scale = tl.max(tl.abs(x)) / 127.0 + 0.0000001
++    y = x / scale
++    y += 0.5 * tl.where(y >= 0, 1, -1)
++    dest = head // HD
++    local = head % HD
++    tl.store(
++        out_ptr + dest * stride_od + rows[:, None] * stride_or + local * stride_oh + cols[None, :],
++        y.to(tl.int8),
++    )
++    tl.store(scale_ptr + dest * stride_sd + pid * HD + local, scale)
++
++
++@triton.jit
++def _quant_v_kernel(
++    x_ptr, stats_ptr, out_ptr, live_rows,
++    stride_xr, stride_xh, stride_od, stride_or, stride_oh,
++    HD: tl.constexpr, C: tl.constexpr, ROWS: tl.constexpr,
++    H: tl.constexpr, W: tl.constexpr,
++):
++    rows = tl.program_id(0) * ROWS + tl.arange(0, ROWS)
++    head = tl.program_id(1)
++    cols = tl.arange(0, C)
++    live = rows[:, None] < live_rows
++    x = tl.load(
++        x_ptr + rows[:, None] * stride_xr + head * stride_xh + cols[None, :],
++        mask=live, other=0.0,
++    ).to(tl.float32)
++    extent = tl.zeros([C], dtype=tl.float32)
++    for rank in tl.static_range(W):
++        extent = tl.maximum(
++            extent, tl.load(stats_ptr + (rank * 2 + 1) * H * C + head * C + cols)
++        )
++    y = x * (2.25 / tl.maximum(extent, 1e-10))[None, :]
++    tl.store(
++        out_ptr + (head // HD) * stride_od + rows[:, None] * stride_or
++        + (head % HD) * stride_oh + cols[None, :],
++        y.to(out_ptr.dtype.element_ty),
++    )
++
++
++@triton.jit
++def _stats_kernel(
++    k_ptr, v_ptr, out_ptr, live_rows, stride_r, stride_h,
++    H: tl.constexpr, C: tl.constexpr, ROWS: tl.constexpr, SPAN: tl.constexpr,
++):
++    head = tl.program_id(0)
++    span = tl.program_id(1)
++    out_ptr += span * 2 * H * C
++    cols = tl.arange(0, C)
++    total = tl.zeros([C], dtype=tl.float32)
++    extent = tl.zeros([C], dtype=tl.float32)
++    for first in range(span * SPAN, min((span + 1) * SPAN, live_rows), ROWS):
++        rows = first + tl.arange(0, ROWS)
++        live = rows[:, None] < live_rows
++        offset = rows[:, None] * stride_r + head * stride_h + cols[None, :]
++        total += tl.sum(tl.load(k_ptr + offset, mask=live, other=0.0).to(tl.float32), axis=0)
++        value = tl.load(v_ptr + offset, mask=live, other=0.0).to(tl.float32)
++        extent = tl.maximum(extent, tl.max(tl.abs(value), axis=0))
++    tl.store(out_ptr + head * C + cols, total)
++    tl.store(out_ptr + (H + head) * C + cols, extent)
++
++
++@triton.jit
++def _row_quant_kernel(x_ptr, out_ptr, scale_ptr, N: tl.constexpr, BLOCK: tl.constexpr):
++    row = tl.program_id(0).to(tl.int64)
++    cols = tl.arange(0, BLOCK)
++    mask = cols < N
++    x = tl.load(x_ptr + row * N + cols, mask=mask, other=0.0).to(tl.float32)
++    extent = tl.maximum(tl.max(tl.abs(x)), 1e-30)
++    scale = tl.exp2(tl.ceil(tl.log2(extent / 448.0)))
++    y = tl.clamp(x / scale, -448.0, 448.0)
++    tl.store(out_ptr + row * N + cols, y.to(out_ptr.dtype.element_ty), mask=mask)
++    tl.store(scale_ptr + row, scale)
++
++
++@triton.jit
++def _row_merge_kernel(
++    x_ptr, scale_ptr, out_ptr, common_ptr, rows,
++    N: tl.constexpr, BLOCK: tl.constexpr, W: tl.constexpr,
++):
++    row = tl.program_id(0).to(tl.int64)
++    part = tl.program_id(1)
++    cols = tl.arange(0, BLOCK)
++    mask = cols < N
++    common = tl.max(tl.load(scale_ptr + tl.arange(0, W) * rows + row))
++    ratio = tl.load(scale_ptr + part * rows + row) / common
++    x = tl.load(x_ptr + (part * rows + row) * N + cols, mask=mask, other=0.0).to(tl.float32)
++    tl.store(
++        out_ptr + (row * W + part) * N + cols,
++        (x * ratio).to(out_ptr.dtype.element_ty),
++        mask=mask,
++    )
++    if part == 0:
++        tl.store(common_ptr + row, common)
++
++
++def _fp8(*shape, device, zero: bool = False) -> torch.Tensor:
++    make = torch.zeros if zero else torch.empty
++    return make(*shape, dtype=torch.uint8, device=device).view(torch.float8_e4m3fn)
++
++
++def local_stats(k: torch.Tensor, v: torch.Tensor, live: int, out=None) -> torch.Tensor:
++    """[2, H, C] FP32: K column sums and V column extrema over this shard's live rows."""
++    heads, dim = k.shape[1], k.shape[2]
++    if out is None:
++        out = torch.empty(2, heads, dim, dtype=torch.float32, device=k.device)
++    spans = max(1, -(-live // _STATS_SPAN))
++    partial = torch.empty(spans, 2, heads, dim, dtype=torch.float32, device=k.device)
++    _stats_kernel[(heads, spans)](
++        k, v, partial, live, k.stride(0), k.stride(1),
++        H=heads, C=dim, ROWS=32, SPAN=_STATS_SPAN,
++    )
++    torch.sum(partial[:, 0], dim=0, out=out[0])
++    torch.amax(partial[:, 1], dim=0, out=out[1])
++    return out
++
++
++def quantize_shard(q, k, v, stats, live: int, used: int):
++    """Quantize a row shard ``[R, H, C]`` into destination-major blocks.
++
++    ``stats`` is every rank's :func:`local_stats`, ``[world, 2, H, C]``.
++    Returns q8/k8 INT8 and v8 FP8 ``[world, R, H/world, C]`` plus group-major
++    scales ``[world, groups, H/world]``.
++    """
++    rows, heads, dim = q.shape
++    world = stats.shape[0]
++    local = heads // world
++    device = q.device
++    q8 = torch.empty(world, rows, local, dim, dtype=torch.int8, device=device)
++    k8 = torch.empty_like(q8)
++    v8 = _fp8(world, rows, local, dim, device=device)
++    q_groups, k_groups = rows // 32 * 8, rows // 64 * 4
++    q_scale = torch.empty(world, q_groups, local, dtype=torch.float32, device=device)
++    k_scale = torch.empty(world, k_groups, local, dtype=torch.float32, device=device)
++    _quant_q_kernel[(q_groups, heads)](
++        q, q8, q_scale, live,
++        q.stride(0), q.stride(1), q8.stride(0), q8.stride(1), q8.stride(2), q_scale.stride(0),
++        HD=local, C=dim,
++    )
++    _quant_k_kernel[(k_groups, heads)](
++        k, stats, k8, k_scale, live, used,
++        k.stride(0), k.stride(1), k8.stride(0), k8.stride(1), k8.stride(2), k_scale.stride(0),
++        HD=local, C=dim, H=heads, W=world,
++    )
++    _quant_v_kernel[(rows // 16, heads)](
++        v, stats, v8, live,
++        v.stride(0), v.stride(1), v8.stride(0), v8.stride(1), v8.stride(2),
++        HD=local, C=dim, ROWS=16, H=heads, W=world,
++    )
++    return q8, k8, v8, q_scale, k_scale
++
++
++_permute_index: dict[torch.device, torch.Tensor] = {}
++
++
++def sage_value_layout(v8: torch.Tensor, padded: int) -> torch.Tensor:
++    """``[T, H, C]`` FP8 -> Sage's ``[1, C, H, padded]`` with its 16-token permutation."""
++    index = _permute_index.get(v8.device)
++    if index is None:
++        index = torch.tensor(_PERMUTE, device=v8.device)
++        _permute_index[v8.device] = index
++    _, heads, dim = v8.shape
++    blocks = v8[:padded].view(torch.uint8).view(padded // 16, 16, heads, dim)
++    out = blocks.permute(3, 2, 0, 1)[..., index]
++    return out.reshape(1, dim, heads, padded).view(torch.float8_e4m3fn)
++
++
++def sage_attend(q8, k8, v8, q_scale, k_scale, v_range, used: int, sm_scale: float):
++    """Run Sage's SM89 kernel on assembled ``[T, H, C]`` operands -> BF16 ``[used, H*C]``."""
++    from sageattention import sm89_compile
++
++    _, heads, dim = q8.shape
++    padded = (used + 63) // 64 * 64
++    q_groups = (used + 127) // 128 * 32
++    k_groups = padded // 64 * 4
++    out = torch.empty(1, used, heads, dim, dtype=torch.bfloat16, device=q8.device)
++    sm89_compile.qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf(
++        q8[:used].unsqueeze(0),
++        k8[:used].unsqueeze(0),
++        sage_value_layout(v8, padded),
++        out,
++        q_scale[:q_groups].t().contiguous().unsqueeze(0),
++        k_scale[:k_groups].t().contiguous().unsqueeze(0),
++        (v_range.clamp_min(1e-10) / _V_SCALE_MAX).unsqueeze(0).contiguous(),
++        0, 0, 3, sm_scale, 0,
++    )
++    return out.view(used, heads * dim)
++
++
++def row_quantize(x: torch.Tensor, total: int):
++    """BF16 ``[used, N]`` -> FP8 ``[total, N]`` and power-of-two row scales ``[total]``."""
++    rows, width = x.shape
++    out = _fp8(total, width, device=x.device, zero=True)
++    scale = torch.full((total,), 2.0**-100, dtype=torch.float32, device=x.device)
++    _row_quant_kernel[(rows,)](x, out, scale, N=width, BLOCK=triton.next_power_of_2(width))
++    return out, scale
++
++
++def row_merge(parts: torch.Tensor, scales: torch.Tensor):
++    """FP8 ``[world, R, N]`` with scales ``[world, R]`` -> FP8 ``[R, world*N]``, ``[R, 1]``."""
++    world, rows, width = parts.shape
++    out = _fp8(rows, world * width, device=parts.device)
++    common = torch.empty(rows, 1, dtype=torch.float32, device=parts.device)
++    _row_merge_kernel[(rows, world)](
++        parts, scales, out, common, rows,
++        N=width, BLOCK=triton.next_power_of_2(width), W=world,
++    )
++    return out, common
++
++
++def eligible(attention, q: torch.Tensor, bounds, max_seqlen: int) -> int | None:
++    """The live row count when this call can take the quantized exchange."""
++    if not ENABLED or bounds is None or len(bounds) != 3:
++        return None
++    world, _ = get_ulysses_ctx()
++    start, used, total = bounds
++    rows, heads, dim = q.shape
++    method = attention.out_proj.quant_method
++    if (
++        world < 2
++        or start != 0
++        or used != max_seqlen
++        or used >= total
++        or total != rows * world
++        or rows % ROW_ALIGNMENT
++        or heads % world
++        or dim != 128
++        or q.dtype != torch.bfloat16
++        or type(method).__name__ != "Fp8LinearMethod"
++        or method.block_quant
++        or method.use_marlin
++        or torch.cuda.get_device_capability(q.device) != (8, 9)
++    ):
++        return None
++    return used
++
++
++def quantized_ulysses_attention(q, k, v, *, used: int, sm_scale: float):
++    """Normalized ``[R, H, C]`` Q/K/V -> (FP8 ``[R, H*C]``, per-row scale ``[R, 1]``)."""
++    world, rank = get_ulysses_ctx()
++    rows, heads, dim = q.shape
++    local = heads // world
++    total = rows * world
++    start = rank * rows
++    live = min(max(used - start, 0), rows)
++    device = q.device
++    exchange = get_host_exchange(world, rank, get_sp_group().all_gather, device)
++    peers = exchange.peers
++
++    stats = torch.empty(world, 2, heads, dim, dtype=torch.float32, device=device)
++    local_stats(k, v, live, stats[rank])
++    exchange.exchange(
++        {p: [stats[rank]] for p in peers}, {p: [stats[p]] for p in peers}
++    )
++    _prof.mark("qu_stats")
++
++    q8, k8, v8, q_scale, k_scale = quantize_shard(q, k, v, stats, live, used)
++    q_groups, k_groups = q_scale.shape[1], k_scale.shape[1]
++    q_all = torch.empty(total, local, dim, dtype=torch.int8, device=device)
++    k_all = torch.empty_like(q_all)
++    v_all = _fp8(total, local, dim, device=device)
++    qs_all = torch.empty(world * q_groups, local, dtype=torch.float32, device=device)
++    ks_all = torch.empty(world * k_groups, local, dtype=torch.float32, device=device)
++
++    def slots(p):
++        return [
++            q_all[p * rows : (p + 1) * rows],
++            k_all[p * rows : (p + 1) * rows],
++            v_all[p * rows : (p + 1) * rows],
++            qs_all[p * q_groups : (p + 1) * q_groups],
++            ks_all[p * k_groups : (p + 1) * k_groups],
++        ]
++
++    for dst, src in zip(slots(rank), (q8, k8, v8, q_scale, k_scale)):
++        if dst.dtype == torch.float8_e4m3fn:
++            dst, src = dst.view(torch.uint8), src.view(torch.uint8)
++        dst.copy_(src[rank])
++    _prof.mark("qu_quant")
++    exchange.exchange(
++        {p: [q8[p], k8[p], v8[p], q_scale[p], k_scale[p]] for p in peers},
++        {p: slots(p) for p in peers},
++    )
++    _prof.mark("qu_xchg_in")
++
++    v_range = stats[:, 1, rank * local : (rank + 1) * local].amax(dim=0)
++    out = sage_attend(q_all, k_all, v_all, qs_all, ks_all, v_range, used, sm_scale)
++    _prof.mark("qu_attn")
++
++    out8, out_scale = row_quantize(out, total)
++    width = local * dim
++    staged = _fp8(world, rows, width, device=device)
++    scales = torch.empty(world, rows, dtype=torch.float32, device=device)
++    staged.view(torch.uint8)[rank] = out8.view(torch.uint8)[start : start + rows]
++    scales[rank] = out_scale[start : start + rows]
++    _prof.mark("qu_out_quant")
++
++    def shard(p):
++        return slice(p * rows, (p + 1) * rows)
++
++    exchange.exchange(
++        {p: [out8[shard(p)], out_scale[shard(p)]] for p in peers},
++        {p: [staged[p], scales[p]] for p in peers},
++    )
++    merged = row_merge(staged, scales)
++    _prof.mark("qu_xchg_out")
++    return merged
+diff --git a/python/sglang/multimodal_gen/runtime/models/encoders/h3_prefix_cache.py b/python/sglang/multimodal_gen/runtime/models/encoders/h3_prefix_cache.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/models/encoders/h3_prefix_cache.py
+@@ -0,0 +1,90 @@
++"""Bounded native Qwen3-VL prefix KV reuse for pure-text H3 conditioning."""
++from __future__ import annotations
++
++import logging
++import torch
++from transformers.cache_utils import DynamicCache
++
++logger = logging.getLogger(__name__)
++
++
++class H3PrefixKVCache:
++    """One immutable previous prefill; every continuation gets a fresh cache.
++
++    Multimodal inputs bypass this cache: matching token IDs alone would not
++    establish matching visual embeddings or mRoPE positions.
++    """
++    def __init__(self, min_prefix_tokens: int = 128, max_bytes: int = 256 * 1024**2):
++        self.min_prefix_tokens = min_prefix_tokens
++        self.max_bytes = max_bytes
++        self.ids = ()
++        self.positions = None
++        self.hidden = self.past = None
++        self.hits = self.misses = 0
++
++    def clear(self):
++        self.ids = ()
++        self.positions = self.hidden = self.past = None
++
++    @staticmethod
++    def _layers(cache):
++        return [(layer.keys, layer.values) for layer in cache.layers]
++
++    @torch.no_grad()
++    def encode(self, model, host_ids, ids, position_ids=None):
++        count = ids.shape[1]
++        if position_ids is None:
++            host_pos = torch.arange(count).view(1, 1, -1).expand(3, 1, -1)
++        else:
++            host_pos = position_ids.detach().to("cpu", dtype=torch.long)
++        if host_pos.ndim == 2:
++            host_pos = host_pos.unsqueeze(0).expand(3, -1, -1)
++        tokens = tuple(host_ids[0].tolist())
++        common = 0
++        for old, new in zip(self.ids, tokens):
++            if old != new:
++                break
++            common += 1
++        if self.positions is not None and common:
++            equal = (self.positions[..., :common] == host_pos[..., :common]).all(dim=0).all(dim=0)
++            mismatch = (~equal).nonzero()
++            if mismatch.numel():
++                common = int(mismatch[0, 0])
++        if common < self.min_prefix_tokens or self.past is None:
++            common = 0
++        if common == count:
++            self.hits += 1
++            return self.hidden[:, :count].clone()
++        past = DynamicCache(config=model.language_model.config)
++        if common:
++            for layer_index, (key, value) in enumerate(self._layers(self.past)):
++                past.update(key[:, :, :common], value[:, :, :common], layer_index)
++        q_len = count - common
++        mask = None
++        if common:
++            q_positions = torch.arange(common, count, device=ids.device)
++            k_positions = torch.arange(count, device=ids.device)
++            mask = (k_positions[None, :] <= q_positions[:, None])[None, None]
++        result = model(
++            input_ids=ids[:, common:],
++            position_ids=host_pos[..., common:].to(ids.device),
++            attention_mask=mask,
++            past_key_values=past, use_cache=True,
++            cache_position=torch.arange(common, count, device=ids.device),
++            return_dict=True, output_attentions=False, output_hidden_states=False,
++        )
++        suffix = result.last_hidden_state
++        hidden = torch.cat((self.hidden[:, :common], suffix), dim=1) if common else suffix
++        size = hidden.numel() * hidden.element_size()
++        for key, value in self._layers(result.past_key_values):
++            size += key.numel() * key.element_size() + value.numel() * value.element_size()
++        if size <= self.max_bytes:
++            self.ids, self.positions = tokens, host_pos.clone()
++            self.hidden, self.past = hidden.detach(), result.past_key_values
++        else:
++            self.clear()
++        self.hits += bool(common)
++        self.misses += not bool(common)
++        if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
++            logger.info("H3_PREFIX_KV reused_tokens=%d new_tokens=%d retained_bytes=%d", common, q_len, size if size <= self.max_bytes else 0)
++        return hidden
+diff --git a/python/sglang/multimodal_gen/runtime/models/encoders/minimax_h3_qwen3vl.py b/python/sglang/multimodal_gen/runtime/models/encoders/minimax_h3_qwen3vl.py
+--- a/python/sglang/multimodal_gen/runtime/models/encoders/minimax_h3_qwen3vl.py
++++ b/python/sglang/multimodal_gen/runtime/models/encoders/minimax_h3_qwen3vl.py
+@@ -1,9 +1,11 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Native, TP-foldable Qwen3-VL conditioning encoder for MiniMax H3."""
+ 
+ from __future__ import annotations
+ 
+ import re
++import os
+ from collections.abc import Iterable
+ from typing import Any
+ 
+@@ -339,6 +341,7 @@
+         pixel_values_videos: torch.Tensor | None = None,
+         video_grid_thw: torch.Tensor | None = None,
+         position_ids: torch.Tensor | None = None,
++        use_prefix_kv: bool | None = None,
+     ) -> torch.Tensor:
+         if input_ids.dim() != 1:
+             raise ValueError(f"input_ids must be 1-D, got {list(input_ids.shape)}")
+@@ -388,7 +391,20 @@
+             )
+             call_kwargs["video_grid_thw"] = host_video_grid_thw
+ 
+-        hidden = self(**call_kwargs).last_hidden_state[0]
++        if (
++            (os.environ.get("H3_OPT_PREFIX_KV") == "1" if use_prefix_kv is None else use_prefix_kv)
++            and pixel_values is None and pixel_values_videos is None
++            and self.device.type == "cuda"
++        ):
++            from sglang.multimodal_gen.runtime.models.encoders.h3_prefix_cache import H3PrefixKVCache
++            if not hasattr(self, "_h3_prefix_kv"):
++                self._h3_prefix_kv = H3PrefixKVCache(
++                    min_prefix_tokens=int(os.environ.get("H3_OPT_PREFIX_MIN_TOKENS", "128")),
++                    max_bytes=int(os.environ.get("H3_OPT_PREFIX_MAX_MB", "256")) * 1024**2,
++                )
++            hidden = self._h3_prefix_kv.encode(self.model, host_ids, ids, position_ids)[0]
++        else:
++            hidden = self(**call_kwargs).last_hidden_state[0]
+         if self.conditioning_projection is not None:
+             hidden = self.conditioning_projection(hidden)
+         hidden = hidden.to(torch.bfloat16)
+diff --git a/python/sglang/multimodal_gen/runtime/models/encoders/qwen3vl.py b/python/sglang/multimodal_gen/runtime/models/encoders/qwen3vl.py
+--- a/python/sglang/multimodal_gen/runtime/models/encoders/qwen3vl.py
++++ b/python/sglang/multimodal_gen/runtime/models/encoders/qwen3vl.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ 
+ from transformers import (
+     Cache,
+@@ -56,6 +57,7 @@
+ 
+ import torch
+ import torch.nn as nn
++import torch.nn.functional as F
+ from transformers.activations import ACT2FN
+ 
+ logger = logging.getLogger(__name__)
+@@ -354,7 +356,21 @@
+         query_states = query_states.transpose(1, 2)
+         key_states = key_states.transpose(1, 2)
+         value_states = value_states.transpose(1, 2)
+-        attn_output = self.attn(query_states, key_states, value_states)
++        if past_key_values is not None and key_states.shape[1] > query_states.shape[1]:
++            # Cached suffix queries need lower-right causal alignment. PyTorch
++            # is_causal=True alone is upper-left for non-square Q/K lengths.
++            if attention_mask is None or attention_mask.ndim != 4:
++                offset = key_states.shape[1] - query_states.shape[1]
++                qpos = torch.arange(query_states.shape[1], device=query_states.device) + offset
++                kpos = torch.arange(key_states.shape[1], device=key_states.device)
++                attention_mask = (kpos[None, :] <= qpos[:, None])[None, None]
++            attn_output = F.scaled_dot_product_attention(
++                query_states.transpose(1, 2), key_states.transpose(1, 2),
++                value_states.transpose(1, 2), attn_mask=attention_mask,
++                scale=self.scaling, enable_gqa=True,
++            ).transpose(1, 2)
++        else:
++            attn_output = self.attn(query_states, key_states, value_states)
+ 
+         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+         if not isinstance(
+diff --git a/python/sglang/multimodal_gen/runtime/models/vaes/h3_exact_graph.py b/python/sglang/multimodal_gen/runtime/models/vaes/h3_exact_graph.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/models/vaes/h3_exact_graph.py
+@@ -0,0 +1,152 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Verified CUDA replay of the unchanged, resident H3 image VAE block stack.
++
++Only the sequential exact-quality decoder uses this path. Tile geometry,
++batch size, operations, precision and reduction order stay unchanged. Two
++different inputs must match eager bit for bit before a graph is retained.
++"""
++
++import logging
++import weakref
++from collections import OrderedDict
++
++import torch
++from torch.utils._pytree import tree_flatten
++
++logger = logging.getLogger(__name__)
++
++
++def _version(tensor):
++    try:
++        return tensor._version
++    except RuntimeError:  # inference tensors do not carry a version counter
++        return None
++
++
++def _same_bits(a, b):
++    return (
++        a.dtype == b.dtype
++        and a.shape == b.shape
++        and torch.equal(
++            a.contiguous().view(torch.uint8), b.contiguous().view(torch.uint8)
++        )
++    )
++
++
++class H3ExactDecoderGraph:
++    def __init__(self, owner, max_entries=2):
++        self.owner = weakref.ref(owner)
++        self.max_entries = max_entries
++        self.entries = OrderedDict()
++        self.weight_signature = None
++        self.disabled = False
++        self.captures = 0
++        self.replays = 0
++
++    @staticmethod
++    def eager(blocks, hidden, rope):
++        for block in blocks:
++            hidden = block(hidden, rope)
++        return hidden
++
++    def maybe_run(self, blocks, hidden, rope):
++        owner = self.owner()
++        if (
++            self.disabled
++            or owner is None
++            or owner.training
++            or owner.decode_fast_path_gate.enabled
++            or any(m.enabled for m in getattr(owner, "layerwise_offload_managers", ()))
++            or not hidden.is_cuda
++            or torch.version.hip is not None
++            or hidden.ndim != 3
++            or hidden.shape[0] != 1
++            or hidden.shape[1] > 4096
++            or torch.is_grad_enabled()
++            or torch.compiler.is_compiling()
++            or torch.cuda.is_current_stream_capturing()
++            or torch.cuda.get_device_capability(hidden.device) != (8, 9)
++        ):
++            return None
++        params = tuple(blocks.parameters())
++        if any(p.device != hidden.device for p in params):
++            return None
++        signature = tuple(
++            (p.data_ptr(), p.shape, p.stride(), p.dtype, _version(p)) for p in params
++        )
++        if signature != self.weight_signature:
++            self.entries.clear()
++            self.weight_signature = signature
++        leaves, _ = tree_flatten(rope)
++        if not leaves or any(
++            not torch.is_tensor(t) or t.device != hidden.device for t in leaves
++        ):
++            return None
++        # The decoder owns immutable RoPE tables. Keep their actual tensors
++        # alive with each graph; a different table requires another capture.
++        rope_key = tuple(
++            (id(t), t.data_ptr(), t.shape, t.stride(), t.dtype, _version(t))
++            for t in leaves
++        )
++        key = (
++            hidden.shape,
++            hidden.stride(),
++            hidden.dtype,
++            hidden.device,
++            rope_key,
++            torch.is_autocast_enabled("cuda"),
++            torch.get_autocast_dtype("cuda"),
++            torch.backends.cuda.matmul.allow_tf32,
++            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
++        )
++        if key in self.entries:
++            entry = self.entries.pop(key)
++            self.entries[key] = entry
++            graph, inputs, output, _ = entry
++            inputs.copy_(hidden)
++            graph.replay()
++            self.replays += 1
++            # Callers retain multiple tile outputs until overlap assembly.
++            return output.clone()
++        if len(self.entries) >= self.max_entries:
++            self.entries.popitem(last=False)
++        reference = self.eager(blocks, hidden, rope)
++        try:
++            inputs = torch.empty_strided(
++                hidden.shape, hidden.stride(), dtype=hidden.dtype, device=hidden.device
++            )
++            inputs.copy_(hidden)
++            current = torch.cuda.current_stream(hidden.device)
++            stream = torch.cuda.Stream(device=hidden.device)
++            stream.wait_stream(current)
++            with torch.cuda.stream(stream):
++                for _ in range(2):
++                    self.eager(blocks, inputs, rope)
++            current.wait_stream(stream)
++            graph = torch.cuda.CUDAGraph()
++            with torch.cuda.graph(graph, stream=stream):
++                output = self.eager(blocks, inputs, rope)
++            current.wait_stream(stream)
++            graph.replay()
++            if not _same_bits(reference, output):
++                raise RuntimeError("first eager/replay byte check failed")
++            probe = -hidden
++            probe_reference = self.eager(blocks, probe, rope)
++            inputs.copy_(probe)
++            graph.replay()
++            if not _same_bits(probe_reference, output):
++                raise RuntimeError("second eager/replay byte check failed")
++            self.entries[key] = (graph, inputs, output, rope)
++            self.captures += 1
++            logger.info(
++                "H3_VAE_EXACT_GRAPH verified shape=%s entries=%d",
++                tuple(hidden.shape),
++                len(self.entries),
++            )
++        except (RuntimeError, torch.OutOfMemoryError) as exc:
++            self.entries.clear()
++            self.disabled = True
++            logger.warning(
++                "H3_VAE_EXACT_GRAPH disabled; retaining eager decoder: %s", exc
++            )
++        return reference
+diff --git a/python/sglang/multimodal_gen/runtime/models/vaes/h3_image_output.py b/python/sglang/multimodal_gen/runtime/models/vaes/h3_image_output.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/runtime/models/vaes/h3_image_output.py
+@@ -0,0 +1,48 @@
++"""Fuse image quantization/layout before copying final pixels to the host."""
++import torch
++import triton
++import triton.language as tl
++
++
++@triton.jit
++def _quantize_hwc(X, Y, count: tl.constexpr, channels: tl.constexpr,
++                  height: tl.constexpr, width: tl.constexpr,
++                  s0: tl.constexpr, s1: tl.constexpr, s2: tl.constexpr,
++                  s3: tl.constexpr, BLOCK: tl.constexpr):
++    offset = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
++    channel = offset % channels
++    pixel = offset // channels
++    x = pixel % width
++    y = (pixel // width) % height
++    batch = pixel // (height * width)
++    value = tl.load(X + batch*s0 + channel*s1 + y*s2 + x*s3,
++                    mask=offset < count, other=0).to(tl.float32)
++    value = tl.minimum(tl.maximum(value * 255.0, 0.0), 255.0)
++    tl.store(Y + offset, value.to(tl.uint8), mask=offset < count)
++
++
++def h3_image_uint8_host(pixels: torch.Tensor):
++    """Return BCHW uint8 tensors in HWC storage; match native truncation.
++
++    The original saver copies FP32 BCHW, then multiplies/clamps/truncates and
++    transposes on the CPU. This copies only the final uint8 HWC buffer (4x less).
++    Lanczos resizing retains its original CPU path at the call site.
++    """
++    if pixels.ndim != 4 or not pixels.is_cuda:
++        raise ValueError("GPU image output requires CUDA BCHW pixels")
++    batch, channels, height, width = pixels.shape
++    output = torch.empty((batch, 1, height, width, channels),
++                         device=pixels.device, dtype=torch.uint8)
++    count = output.numel()
++    _quantize_hwc[(triton.cdiv(count, 1024),)](
++        pixels, output, count, channels, height, width, *pixels.stride(),
++        BLOCK=1024, enable_fp_fusion=False,
++    )
++    try:
++        host = torch.empty(output.shape, dtype=torch.uint8, pin_memory=True)
++    except RuntimeError:
++        host = output.cpu()
++    else:
++        host.copy_(output, non_blocking=True)
++        torch.cuda.current_stream(pixels.device).synchronize()
++    return host[:, 0].permute(0, 3, 1, 2)
+diff --git a/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3.py b/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3.py
+--- a/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3.py
++++ b/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3.py
+@@ -1,4 +1,7 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
++
++import os
+ 
+ import torch
+ 
+@@ -104,6 +107,12 @@
+         # and this tiled image decode switch together.
+         self.decode_fast_path_gate = self._sgl_gate
+         register_vae_fast_path_gate(self, self.decode_fast_path_gate)
++        if os.environ.get("H3_OPT_EXACT_VAE_GRAPH") == "1":
++            from sglang.multimodal_gen.runtime.models.vaes.h3_exact_graph import (
++                H3ExactDecoderGraph,
++            )
++
++            self.decoder._h3_exact_graph = H3ExactDecoderGraph(self)
+ 
+     def _run_tile_tasks(
+         self, tiles, tile_indices, forward_fn, cls_agg=None, *, tile_batch: int = 1
+diff --git a/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3_video_vae/vae_vit.py b/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3_video_vae/vae_vit.py
+--- a/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3_video_vae/vae_vit.py
++++ b/python/sglang/multimodal_gen/runtime/models/vaes/minimax_h3_video_vae/vae_vit.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ # ViT3D video and 2D image decoders for the MiniMax H3 visual VAE.
+ from contextlib import nullcontext
+ 
+@@ -214,6 +215,11 @@
+         return hidden_states, img_ids
+ 
+     def forward_transformer_blocks(self, hidden_states, rotary_pos_emb):
++        graph = getattr(self, "_h3_exact_graph", None)
++        if graph is not None:
++            result = graph.maybe_run(self.transformer_blocks, hidden_states, rotary_pos_emb)
++            if result is not None:
++                return result
+         if (
+             self._sgl_gate is not None
+             and self._sgl_gate.enabled
+diff --git a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/denoise_loop.py b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/denoise_loop.py
+--- a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/denoise_loop.py
++++ b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/denoise_loop.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """MiniMax H3 full denoise loops.
+ 
+ Video (cfg-distilled): per step, the positive presentation is forwarded exactly
+@@ -737,6 +738,7 @@
+     prepare_branch: Callable[[MiniMaxH3DenoiseBranch], None] | None = None,
+     adaln_sigmas: Sequence[float] | None = None,
+     prewarm_both_tasks: bool = False,
++    opt_config: dict[str, Any] | None = None,
+ ) -> torch.Tensor:
+     """Return fp32 image rows after ``len(sigmas) - 1`` positive-branch steps.
+ 
+@@ -810,35 +812,69 @@
+     sigma_values = torch.tensor(sigmas, dtype=torch.float32, device=device)
+     sigma_deltas = sigma_values[:-1] - sigma_values[1:]
+ 
+-    for step in range(num_steps):
+-        if n_cond:
+-            video_rows[:n_cond].copy_(anchors)
+-        kwargs = branch.forward_kwargs(
+-            video_rows=video_rows,
+-            audio_rows=audio_rows,
+-            step_timesteps=plan[step],
+-            adaln_slot=None if slots is None else slots[step],
+-        )
+-        # The image loop forwards and returns every image row, references
+-        # included; the video helper forwards target rows only.
+-        kwargs["x"][0].index_copy_(0, branch.img_pos_dev, video_rows)
+-        kwargs["img_pos_for_infer_output_info"] = {"position_ids": branch.img_pos_dev}
+-        kwargs["skip_mask_out_condition"] = n_cond == 0
+-        metadata = positive.attn_metadata
+-        if metadata is not None:
+-            metadata.current_timestep = step
+-        step_cm = step_profiler(step) if step_profiler is not None else nullcontext()
+-        with step_cm:
+-            with set_forward_context(current_timestep=step, attn_metadata=metadata):
+-                video, _ = (
+-                    model(**kwargs)
+-                    if model_forward is None
+-                    else model_forward(model, kwargs, step)
+-                )
+-            target_rows = video_rows[n_cond:]
+-            target_rows.copy_(target_rows + sigma_deltas[step] * video[n_cond:].float())
+-        if on_step is not None:
+-            on_step(step)
++    from sglang.multimodal_gen.runtime.models.dits.minimax_h3_opt import (
++        H3ImageOptState, validate_h3_opt,
++    )
++    cfg = validate_h3_opt(opt_config, num_steps)
++    selected_steps = cfg.get("steps", list(range(num_steps)))
++    final_layer = getattr(model, "final_layer", None)
++    if cfg.get("merge_heads"):
++        final_layer._h3_opt_merged_ranges = {
++            step: tuple(sigmas[i] - sigmas[i+1] for i in range(
++                step, selected_steps[j+1] if j+1 < len(selected_steps) else num_steps
++            ))
++            for j, step in enumerate(selected_steps)
++        }
++    image_opt = None
++    if cfg.get("tea_threshold", 0) > 0 or cfg.get("reuse_steps"):
++        target_global_start = int(positive.packed["text_pos"].numel()) + n_cond
++        target_global_stop = int(positive.packed["text_pos"].numel()) + video_rows.shape[0]
++        local_start, local_stop = branch.local_row_slice.start, branch.local_row_slice.stop
++        image_opt = H3ImageOptState(
++            cfg=cfg, selected_steps=selected_steps,
++            target_start=min(max(target_global_start-local_start, 0), local_stop-local_start),
++            target_stop=min(max(target_global_stop-local_start, 0), local_stop-local_start),
++        )
++        if getattr(model, "_h3_image_opt_state", None) is not None:
++            raise RuntimeError("H3 image optimization state leaked across requests")
++        model._h3_image_opt_state = image_opt
++    try:
++        for ordinal, step in enumerate(selected_steps):
++            if n_cond:
++                video_rows[:n_cond].copy_(anchors)
++            kwargs = branch.forward_kwargs(
++                video_rows=video_rows,
++                audio_rows=audio_rows,
++                step_timesteps=plan[step],
++                adaln_slot=None if slots is None else slots[step],
++            )
++            # Keep each original head and timestep even for a sparse schedule.
++            kwargs["x"][0].index_copy_(0, branch.img_pos_dev, video_rows)
++            kwargs["img_pos_for_infer_output_info"] = {"position_ids": branch.img_pos_dev}
++            kwargs["skip_mask_out_condition"] = n_cond == 0
++            metadata = positive.attn_metadata
++            if metadata is not None:
++                metadata.current_timestep = step
++            step_cm = step_profiler(step) if step_profiler is not None else nullcontext()
++            next_index = selected_steps[ordinal+1] if ordinal+1 < len(selected_steps) else num_steps
++            delta = sigma_deltas[step] if next_index == step+1 else sigma_values[step] - sigma_values[next_index]
++            with step_cm:
++                with set_forward_context(current_timestep=step, attn_metadata=metadata):
++                    video, _ = (
++                        model(**kwargs)
++                        if model_forward is None
++                        else model_forward(model, kwargs, step)
++                    )
++                target_rows = video_rows[n_cond:]
++                target_rows.copy_(target_rows + delta * video[n_cond:].float())
++            if on_step is not None:
++                on_step(step)
++    finally:
++        if cfg.get("merge_heads"):
++            final_layer._h3_opt_merged_ranges = None
++        if image_opt is not None:
++            model._h3_image_opt_state = None
++            image_opt.release()
+     return video_rows
+ 
+ 
+diff --git a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/decoding.py b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/decoding.py
+--- a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/decoding.py
++++ b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/decoding.py
+@@ -1,7 +1,9 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ from __future__ import annotations
+ 
+ import functools
++import os
+ from collections.abc import Mapping
+ from contextlib import contextmanager, nullcontext
+ 
+@@ -464,8 +466,15 @@
+             ):
+                 pixels = video_vae.decode_image_raw(raw)
+         # decode_image_raw already applies the ImageNet inverse normalization.
++        shape = plan.shape
++        if (
++            os.environ.get("H3_OPT_GPU_OUTPUT") == "1"
++            and pixels.is_cuda
++            and shape["output_width"] is None
++        ):
++            from sglang.multimodal_gen.runtime.models.vaes.h3_image_output import h3_image_uint8_host
++            return OutputBatch(output=h3_image_uint8_host(pixels.detach()), metrics=batch.metrics)
+         pixels = pixels.detach().float().cpu()
+-        shape = plan.shape
+         if shape["output_width"] is not None:
+             width, height = int(shape["output_width"]), int(shape["output_height"])
+             logger.info(
+diff --git a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/denoising.py b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/denoising.py
+--- a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/denoising.py
++++ b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/denoising.py
+@@ -1,10 +1,12 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """MiniMax H3 denoise sink for packed-token DiT stepping, CFG-distilled
+ single-branch execution, and payload validation.
+ """
+ 
+ from __future__ import annotations
+ 
++import os
+ import math
+ from collections.abc import Callable, Mapping
+ from contextlib import contextmanager
+@@ -92,8 +94,17 @@
+ 
+ 
+ def _image_packed_seq_len(used_rows: int) -> int:
+-    """Used rows (text + target + references) rounded up to 16, plus 16 rows."""
+-    return ((used_rows + 15) // 16) * 16 + 16
++    """Used rows (text + target + references) rounded up to 16, plus 16 rows.
++
++    H3_OPT_SEQ_ALIGN rounds the result up again. The extra rows are padding
++    that attention never reads; the quantized Ulysses exchange needs every
++    rank's shard to be a multiple of 64 rows.
++    """
++    seq_len = ((used_rows + 15) // 16) * 16 + 16
++    align = int(os.environ.get("H3_OPT_SEQ_ALIGN", "0"))
++    if align > 1:
++        seq_len = (seq_len + align - 1) // align * align
++    return seq_len
+ 
+ 
+ def _image_branch_inputs(
+@@ -950,6 +961,11 @@
+ 
+     def _run_image_loop(self, batch: Req, plan: Any, server_args: ServerArgs) -> None:
+         """Run the image loop over the published latent and reference rows."""
++        opt_config = getattr(batch.sampling_params, "h3_opt", None) or {}
++        if server_args.enable_breakable_cuda_graph and any(
++            key != "prefix_kv" for key in opt_config
++        ):
++            raise ValueError("H3 approximate DiT options require eager execution")
+         from sglang.multimodal_gen.runtime.pipelines_core.stages.model_specific_stages.minimax_h3.constants import (
+             MINIMAX_H3_DENOISE_STATE_EXTRA_KEY,
+             MINIMAX_H3_REFERENCE_IMAGE_ROWS_EXTRA_KEY,
+@@ -1004,7 +1020,7 @@
+                 _precompute_rope_cache(transformer, branch, device=self.device)
+ 
+             with self.progress_bar(
+-                total=len(batch.sigmas) - 1,
++                total=len(opt_config.get("steps", batch.sigmas[:-1])),
+                 batch=batch,
+                 desc="minimax_h3 image denoise",
+             ) as progress_bar:
+@@ -1031,6 +1047,7 @@
+                     prewarm_both_tasks=batch.is_warmup
+                     and len(server_args.pipeline_config.get_supported_task_types())
+                     == 2,
++                    opt_config=opt_config,
+                     prepare_branch=prepare_branch,
+                     device=self.device,
+                     on_step=on_step,
+diff --git a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/text_encoding.py b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/text_encoding.py
+--- a/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/text_encoding.py
++++ b/python/sglang/multimodal_gen/runtime/pipelines_core/stages/model_specific_stages/minimax_h3/stages/text_encoding.py
+@@ -1,6 +1,8 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ from __future__ import annotations
+ 
++import os
+ import torch
+ 
+ from sglang.multimodal_gen.runtime.managers.forward_context import set_forward_context
+@@ -339,6 +341,7 @@
+             prepared = minimax_h3_prepared_reference_image(batch, plan)
+             images = [item["image"] for item in prepared["images"]]
+         bounds = pipeline_config.edit_reference_short_edge_bounds("qwen")
++        prefix_kv = (getattr(batch.sampling_params, "h3_opt", None) or {}).get("prefix_kv")
+         group = getattr(self.text_encoder, "_encoder_tp_group", None)
+         if group is None and model_parallel_is_initialized():
+             group = get_tp_group()
+@@ -348,17 +351,18 @@
+         result = cached_encoder_call(
+             self.text_encoder,
+             (plan.prompt, images),
+-            {"reference_bounds": bounds},
+-            lambda: self._compute_image_conditioning(plan.prompt, images, bounds),
++            {"reference_bounds": bounds, "prefix_kv": prefix_kv},
++            lambda: self._compute_image_conditioning(plan.prompt, images, bounds, prefix_kv=prefix_kv),
+             group,
+             namespace=self,
++            keep_on_device=os.environ.get("H3_OPT_GPU_CONDITIONING") == "1",
+         )
+         self.finish_unused_declared_component(
+             component_name="text_encoder", module=self.text_encoder
+         )
+         return result
+ 
+-    def _compute_image_conditioning(self, prompt, images, bounds) -> dict:
++    def _compute_image_conditioning(self, prompt, images, bounds, *, prefix_kv=None) -> dict:
+         """Encode the image release's positive branch.
+ 
+         Edit references go to Qwen resized to the configured short-edge bounds
+@@ -394,9 +398,10 @@
+                 image_grid_thw=vision.get("image_grid_thw"),
+             )
+             text_len = int(tags.shape[0])
+-            hidden = encoder.encode_ids(ids, position_ids=positions, **vision)
+-            # The image loop packs CPU-resident branch inputs.
+-            hidden = hidden[:text_len].cpu()
++            hidden = encoder.encode_ids(ids, position_ids=positions, use_prefix_kv=prefix_kv, **vision)
++            hidden = hidden[:text_len]
++            if os.environ.get("H3_OPT_GPU_CONDITIONING") != "1":
++                hidden = hidden.cpu()
+             return {
+                 "hidden_states": hidden,
+                 "text_len": text_len,
+diff --git a/python/sglang/multimodal_gen/runtime/utils/quantization_utils.py b/python/sglang/multimodal_gen/runtime/utils/quantization_utils.py
+--- a/python/sglang/multimodal_gen/runtime/utils/quantization_utils.py
++++ b/python/sglang/multimodal_gen/runtime/utils/quantization_utils.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ import glob
+ import json
+ import os
+@@ -62,6 +63,7 @@
+     process_device: torch.device | None = None,
+     *,
+     quantized_only: bool = False,
++    keep_on_device: bool = False,
+ ) -> int:
+     """Process native and SRT layers once, optionally staging one layer at a time."""
+     processed_layers = 0
+@@ -93,6 +95,9 @@
+         if is_npu() and not unquantized:
+             torch.npu.config.allow_internal_format = True
+         if process_device is None:
++            method.process_weights_after_loading(module)
++        elif keep_on_device:
++            module.to(process_device)
+             method.process_weights_after_loading(module)
+         else:
+             with stage_module_for_post_load(module, process_device):
+diff --git a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_dit_contract.py b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_dit_contract.py
+--- a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_dit_contract.py
++++ b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_dit_contract.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Mixed-precision weight and TP/Ulysses numerical contracts for H3 DiT."""
+ 
+ from types import SimpleNamespace
+@@ -33,6 +34,9 @@
+     Fp8LinearMethod,
+ )
+ from sglang.multimodal_gen.runtime.layers.quantization.mxfp8 import MXFP8Config
++from sglang.multimodal_gen.runtime.layers.quantization.configs.convrot_int8_config import (
++    ConvRotInt8Config,
++)
+ from sglang.multimodal_gen.runtime.layers.usp import _usp_input_all_to_all_packed_qkv
+ from sglang.multimodal_gen.runtime.loader.transformer_load_utils import (
+     _needs_device_weight_postprocess,
+@@ -705,6 +709,32 @@
+         )
+ 
+ 
++def test_online_convrot_adaln_preserves_native_boundaries():
++    quant = ConvRotInt8Config(
++        backend="comfy_kitchen", ignored_layers=["condition_proj", "token_refiner"]
++    )
++    with torch.device("meta"):
++        model = MiniMaxH3DiTModel(
++            config=MiniMaxH3DiTConfig(), hf_config={}, quant_config=quant,
++            adaln_weight_files=["native-bf16.safetensors"],
++        )
++    assert model.adaln_cache.weight_files == ["native-bf16.safetensors"]
++    assert model.blocks[0].adaln_proj is None
++    assert isinstance(model.condition_proj.quant_method, UnquantizedLinearMethod)
++    assert isinstance(model.time_embedder.proj_in.quant_method, UnquantizedLinearMethod)
++    assert isinstance(model.final_layer.video_out.quant_method, UnquantizedLinearMethod)
++    assert model.blocks[0].attn.qkv_proj.quant_method.quant_config is quant
++
++
++def test_convrot_adaln_rejects_serialized_weights():
++    quant = ConvRotInt8Config(backend="comfy_kitchen", layer_markers={})
++    with pytest.raises(ValueError, match="native checkpoint weights"):
++        MiniMaxH3DiTModel(
++            config=MiniMaxH3DiTConfig(), hf_config={}, quant_config=quant,
++            adaln_weight_files=["serialized-int8.safetensors"],
++        )
++
++
+ def _block_fp8_quant_config(block: int = 128, **kwargs) -> Fp8Config:
+     return Fp8Config(
+         is_checkpoint_fp8_serialized=True,
+diff --git a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_encoder_device.py b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_encoder_device.py
+--- a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_encoder_device.py
++++ b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_encoder_device.py
+@@ -1,3 +1,4 @@
++# Modified by MiniMax-H3-Image-Accel.
+ import unittest
+ from unittest import mock
+ 
+@@ -46,6 +47,24 @@
+         ):
+             self.assertEqual(encoder.device, cpu)
+ 
++    def test_mapped_cpu_weights_preserve_values_without_a_second_copy(self):
++        for mapped in (False, True):
++            with self.subTest(mapped=mapped):
++                encoder = MiniMaxH3Qwen3VLEncoder.__new__(MiniMaxH3Qwen3VLEncoder)
++                torch.nn.Module.__init__(encoder)
++                encoder.selected_lm_layer = 1
++                encoder._keep_checkpoint_mapping = mapped
++                encoder.model = torch.nn.Module()
++                encoder.model.language_model = torch.nn.Module()
++                encoder.model.language_model.layers = torch.nn.ModuleList([
++                    torch.nn.Linear(3, 2, bias=False, dtype=torch.bfloat16)
++                ])
++                source = torch.arange(6, dtype=torch.bfloat16).reshape(2, 3)
++                encoder.load_weights([("model.layers.0.weight", source)])
++                weight = encoder.model.language_model.layers[0].weight
++                torch.testing.assert_close(weight, source, rtol=0, atol=0)
++                self.assertEqual(weight.data_ptr() == source.data_ptr(), mapped)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_sampling.py b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_sampling.py
+--- a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_sampling.py
++++ b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_sampling.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Image sampling params via the real factory and HTTP router; registry is stubbed."""
+ 
+ import io
+@@ -61,6 +62,14 @@
+ @pytest.mark.parametrize("quality", ["exact", "lossless"])
+ def test_reference_and_lossless_quality_are_accepted(quality):
+     assert MiniMaxH3ImageSamplingParams(quality=quality).quality == quality
++
++
++def test_single_quality_default_is_explicitly_overridable(monkeypatch):
++    monkeypatch.delenv("H3_OPT_DEFAULT_QUALITY", raising=False)
++    assert MiniMaxH3ImageSamplingParams().quality == "lossless"
++    monkeypatch.setenv("H3_OPT_DEFAULT_QUALITY", "exact")
++    assert MiniMaxH3ImageSamplingParams().quality == "exact"
++    assert MiniMaxH3ImageSamplingParams(quality="lossless").quality == "lossless"
+ 
+ 
+ @pytest.mark.parametrize(
+@@ -222,6 +231,18 @@
+     assert t2i.guidance_scale == edit.guidance_scale == 1.0
+ 
+ 
++def test_http_quality_default_and_explicit_override(image_router, monkeypatch):
++    monkeypatch.setenv("H3_OPT_DEFAULT_QUALITY", "exact")
++    client, admitted = image_router
++    for quality, expected in ((None, "exact"), ("auto", "exact"), ("lossless", "lossless")):
++        fields = {"prompt": "p", "size": "64x32"}
++        if quality is not None:
++            fields["quality"] = quality
++        response = client.post("/v1/images/generations", json=fields)
++        assert response.status_code == 200, response.text
++        assert admitted[-1].sampling_params.quality == expected
++
++
+ @pytest.mark.parametrize(
+     "fields",
+     [
+diff --git a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_server_args.py b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_server_args.py
+--- a/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_server_args.py
++++ b/python/sglang/multimodal_gen/test/unit/test_minimax_h3_image_server_args.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Real ServerArgs normalization with simulated CUDA capacity, never GPU execution."""
+ 
+ import pytest
+@@ -137,6 +138,39 @@
+     )
+ 
+ 
++def test_image_convrot_is_explicit_and_transformer_only(make_server, monkeypatch):
++    monkeypatch.delenv("H3_OPT_CONVROT_EXPERIMENTAL", raising=False)
++    monkeypatch.delenv("H3_OPT_INT8_EXPERIMENTAL", raising=False)
++    with pytest.raises(ValueError, match="H3_OPT_CONVROT_EXPERIMENTAL"):
++        make_server(quantization="convrot_int8")
++    monkeypatch.setenv("H3_OPT_CONVROT_EXPERIMENTAL", "1")
++    args = make_server(quantization="convrot_int8", minimax_h3_adaln_online=True)
++    assert args.quantization == "convrot_int8"
++    assert args.pipeline_config.vae_precision == "fp32"
++    assert args.pipeline_config.vae_decode_precision == "bf16"
++    with pytest.raises(ValueError, match="image VAE retains native precision"):
++        make_server(component_quantizations={"text_encoder": "convrot_int8"})
++
++def test_int8_is_explicit_and_limited_to_a_single_sm120_transformer(make_server, monkeypatch):
++    monkeypatch.delenv("H3_OPT_CONVROT_EXPERIMENTAL", raising=False)
++    monkeypatch.setenv("H3_OPT_INT8_EXPERIMENTAL", "1")
++    monkeypatch.setattr(image_config.torch.cuda, "get_device_capability", lambda: (12, 0))
++    args = make_server(32, quantization="convrot_int8", minimax_h3_adaln_online=True)
++    assert args.quantization == "convrot_int8"
++    assert args.pipeline_config.vae_decode_precision == "bf16"
++    with pytest.raises(ValueError, match="fp8/mxfp8"):
++        make_server(32, quantization="convrot_int8", num_gpus=2)
++    with pytest.raises(ValueError, match="fp8/mxfp8"):
++        make_server(32, component_quantizations={"text_encoder": "convrot_int8"})
++    monkeypatch.setattr(image_config.torch.cuda, "get_device_capability", lambda: (8, 9))
++    with pytest.raises(ValueError, match="fp8/mxfp8"):
++        make_server(32, quantization="convrot_int8")
++    monkeypatch.setattr(image_config.torch.cuda, "get_device_capability", lambda: (12, 0))
++    monkeypatch.delenv("H3_OPT_INT8_EXPERIMENTAL")
++    with pytest.raises(ValueError, match="fp8/mxfp8"):
++        make_server(32, quantization="convrot_int8")
++
++
+ def test_gb10_residency_requires_available_shared_memory_and_online_adaln(make_server):
+     hardware = dict(device_names=["NVIDIA GB10"], shared_memory=True)
+     resident = make_server(109, **hardware)
+diff --git a/python/sglang/multimodal_gen/test/unit/test_online_fp8_layerwise_load.py b/python/sglang/multimodal_gen/test/unit/test_online_fp8_layerwise_load.py
+--- a/python/sglang/multimodal_gen/test/unit/test_online_fp8_layerwise_load.py
++++ b/python/sglang/multimodal_gen/test/unit/test_online_fp8_layerwise_load.py
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: Apache-2.0
++# Modified by MiniMax-H3-Image-Accel.
+ """Online quantization must not materialize a CPU-offloaded DiT on CUDA."""
+ 
+ import unittest
+@@ -13,6 +14,9 @@
+ )
+ from sglang.multimodal_gen.runtime.layers.linear import ReplicatedLinear
+ from sglang.multimodal_gen.runtime.layers.quantization.fp8 import Fp8Config
++from sglang.multimodal_gen.runtime.layers.quantization.configs.convrot_int8_config import (
++    ConvRotInt8Config,
++)
+ from sglang.multimodal_gen.runtime.layers.quantization.mxfp8 import MXFP8Config
+ from sglang.multimodal_gen.runtime.loader import fsdp_load
+ from sglang.multimodal_gen.runtime.loader.weight_load_plan import WeightLoadPlan
+@@ -54,7 +58,12 @@
+             for i in range(2)
+         }
+         device = torch.device("cuda:0")
+-        for config_cls in (Fp8Config, MXFP8Config):
++        configs = [Fp8Config, MXFP8Config]
++        if torch.cuda.get_device_capability() in {(9, 0), (10, 0), (12, 0), (12, 1)}:
++            def int8_config():
++                return ConvRotInt8Config(group_size=128, backend="jit")
++            configs.append(int8_config)
++        for config_cls in configs:
+             with self.subTest(quantization=config_cls.__name__):
+ 
+                 def load(plan, starts_on_cpu):
+@@ -78,6 +87,21 @@
+                     for name, value in reference.state_dict().items()
+                 }
+                 del reference
++                resident_plan = WeightLoadPlan.for_component(
++                    checkpoint_load_device=torch.device("cpu"),
++                    needs_device_weight_postprocess=True,
++                    component_starts_on_cpu=False,
++                    layerwise_postprocess_device=device,
++                    layerwise_resident=True,
++                )
++                resident = load(resident_plan, False)
++                for name, value in resident.state_dict().items():
++                    self.assertEqual(value.device, device)
++                    torch.testing.assert_close(
++                        value.detach().cpu().contiguous().view(torch.uint8),
++                        expected[name], rtol=0, atol=0,
++                    )
++                del resident
+                 visited = []
+ 
+                 def bounded_postprocess(model, process_device):
+diff --git a/python/sglang/multimodal_gen/test/unit/test_sage_h3_policy.py b/python/sglang/multimodal_gen/test/unit/test_sage_h3_policy.py
+new file mode 100644
+--- /dev/null
++++ b/python/sglang/multimodal_gen/test/unit/test_sage_h3_policy.py
+@@ -0,0 +1,59 @@
++# SPDX-License-Identifier: Apache-2.0
++"""CPU dispatch checks for both H3 Sage FP16-PV experiment interfaces."""
++
++import sys
++from types import ModuleType
++from unittest.mock import Mock
++
++import pytest
++import torch
++
++from sglang.multimodal_gen.runtime.layers.attention.backends.sage_attn import (
++    SageAttentionImpl,
++)
++
++
++@pytest.mark.parametrize(
++    "pv,legacy,granularity",
++    [("auto", "0", None), ("fp16", "0", "per_thread"),
++     ("auto", "1", "per_warp"), ("fp16", "1", "per_thread")],
++)
++def test_h3_sage_flags_preserve_each_experiments_quantization(
++    monkeypatch, pv, legacy, granularity
++):
++    monkeypatch.setenv("H3_OPT_SAGE2_PV", pv)
++    monkeypatch.setenv("H3_OPT_SAGE_FP16_PV", legacy)
++    monkeypatch.setenv("SGLANG_USE_SAGE_ATTENTION_IMPL", "auto")
++    query = torch.randn(1, 8, 1, 64)
++    sage = ModuleType("sageattention")
++    sage.sageattn = Mock(return_value=query)
++    sage.sageattn_qk_int8_pv_fp16_cuda = Mock(return_value=query)
++    monkeypatch.setitem(sys.modules, "sageattention", sage)
++    implementation = SageAttentionImpl(1, 64, False, 0.125)
++    assert implementation.forward(query, query, query, None) is query
++    if granularity is None:
++        sage.sageattn.assert_called_once()
++        sage.sageattn_qk_int8_pv_fp16_cuda.assert_not_called()
++    else:
++        sage.sageattn.assert_not_called()
++        kwargs = sage.sageattn_qk_int8_pv_fp16_cuda.call_args.kwargs
++        assert kwargs["qk_quant_gran"] == granularity
++        assert kwargs["pv_accum_dtype"] == "fp32"
++        assert kwargs["tensor_layout"] == "NHD"
++
++
++@pytest.mark.parametrize("flag", ["H3_OPT_SAGE2_PV", "H3_OPT_SAGE_FP16_PV"])
++@pytest.mark.parametrize("implementation", ["trtllm_gen", "trtllm-gen"])
++def test_both_fp16_pv_flags_reject_trtllm(monkeypatch, flag, implementation):
++    monkeypatch.setenv("H3_OPT_SAGE2_PV", "auto")
++    monkeypatch.setenv("H3_OPT_SAGE_FP16_PV", "0")
++    monkeypatch.setenv(flag, "fp16" if flag == "H3_OPT_SAGE2_PV" else "1")
++    monkeypatch.setenv("SGLANG_USE_SAGE_ATTENTION_IMPL", implementation)
++    with pytest.raises(ValueError, match="CUDA SageAttention implementation"):
++        SageAttentionImpl(1, 64, False, 0.125)
++
++
++def test_invalid_sage_pv_setting_is_rejected(monkeypatch):
++    monkeypatch.setenv("H3_OPT_SAGE2_PV", "invalid")
++    with pytest.raises(ValueError, match="H3_OPT_SAGE2_PV"):
++        SageAttentionImpl(1, 64, False, 0.125)

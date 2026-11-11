@@ -1,0 +1,34 @@
+name: CPU checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check shell entry points
+        run: |
+          for script in bin/*.sh bin/h3ctl; do
+            bash -n "$script"
+          done
+      - name: Apply the H3 patch to pinned SGLang
+        run: python bin/prepare_sglang.py
+      - name: Check Python tooling
+        env:
+          PYTHONPATH: tests
+        run: |
+          python -m pip install numpy==2.3.5 pillow==12.3.0
+          python -m compileall -q bin tests
+          python -m unittest test_launch_profile test_compare_run_stack test_export_accuracy test_validate_accuracy

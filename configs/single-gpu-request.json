@@ -1,0 +1,13 @@
+{
+  "model": "MiniMaxAI/MiniMax-H3-Image",
+  "prompt": "A cobalt perfume bottle",
+  "size": "2048x2048",
+  "seed": 731,
+  "generator_device": "cpu",
+  "num_inference_steps": 6,
+  "guidance_scale": 1,
+  "quality": "exact",
+  "h3_opt": {},
+  "response_format": "b64_json",
+  "output_format": "png"
+}

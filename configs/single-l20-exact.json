@@ -1,0 +1,23 @@
+{
+  "reference": "single-exact-reference",
+  "variants": [
+    {
+      "run": "single-exact-reference",
+      "label": "Native BF16 exact\nAll layers streamed"
+    },
+    {
+      "run": "single-exact-optimized",
+      "label": "Optimized BF16 exact\nEncoder / VAE residency + graphs"
+    }
+  ],
+  "groups": [
+    {
+      "name": "exact-preservation",
+      "title": "Single L20: native exact quality preserved",
+      "runs": [
+        "single-exact-optimized"
+      ],
+      "timing_note": "Same physical L20, all six native passes. Median of 3 warmed HTTP trials; conditioning cache hits disabled."
+    }
+  ]
+}

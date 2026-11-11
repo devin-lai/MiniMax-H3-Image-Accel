@@ -1,0 +1,24 @@
+{
+  "reference": "accuracy-reference-final",
+  "variants": [
+    {
+      "run": "accuracy-reference-final",
+      "label": "BF16 TP4 reference\n4 L20 GPUs / 6 passes"
+    },
+    {
+      "run": "single-final-baseline",
+      "label": "Native BF16 TP1\n1 L20 GPU / 6 passes"
+    }
+  ],
+  "groups": [
+    {
+      "name": "topology",
+      "title": "BF16 TP4 versus TP1: separate numerical trajectories",
+      "runs": [
+        "single-final-baseline"
+      ],
+      "hardware_note": "TP4: four L20s. TP1: one L20.",
+      "timing_note": "Previously recorded TP4 reference; TP1 medians use 3 trials. Different GPU counts; this is a numerical comparison."
+    }
+  ]
+}

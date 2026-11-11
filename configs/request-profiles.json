@@ -1,0 +1,9 @@
+{
+  "six": {},
+  "balanced": {"steps": [0, 1, 3, 5], "merge_heads": true},
+  "tea": {"tea_threshold": 0.4},
+  "tea-conservative": {"tea_threshold": 0.15},
+  "extreme": {"steps": [0, 2, 5], "merge_heads": true},
+  "tea-extreme": {"tea_threshold": 0.8, "tea_warmup": 1, "tea_max_skip": 2},
+  "sparse-preview": {"steps": [0, 2, 5]}
+}
