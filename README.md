@@ -4,29 +4,35 @@
 
 Run **MiniMax-H3-Image on a single L20 or RTX 5090**, or spread inference across multiple GPUs. The SGLang runtime supports native 4K generation and reference-image editing. Start with BF16 and all six native denoising passes. Opt into FP8 and shorter schedules when you want to trade reference fidelity for lower latency.
 
-[Benchmark results](#benchmark-results) · [Image comparisons](#image-comparisons) · [Quickstart](#quickstart) · [Runtime guide](docs/runtime.md) · [Releases](https://github.com/devin-lai/MiniMax-H3-Image-Accel/releases)
+[Benchmark results](#benchmark-results) · [Fidelity charts](docs/benchmarks/fidelity.md) · [Quickstart](#quickstart) · [Runtime guide](docs/runtime.md) · [Releases](https://github.com/devin-lai/MiniMax-H3-Image-Accel/releases)
 
 ## Benchmark results
 
-On one L20, the BF16 `single` profile cut 2K product latency by **29%**, with byte-identical PNGs across the eight audited native-`exact` pairs. On one RTX 5090, the opt-in MXFP8/SageAttention2 profile ran native 4K in **13.86 s**, a **2.35× speedup** over BF16 streaming. MXFP8 changes the generated image for the same seed. [Benchmark data and methodology](docs/benchmarks/README.md)
+On one L20, the BF16 `single` profile cut 2K product latency by **29.2%** and increased measured throughput by **41.3%**, with byte-identical PNGs in the native `exact` audit. The opt-in FP8 build reached **3.20×** the 2K product speed of the earlier four-L20 BF16 reference, and the MXFP8 build reached **2.35×** the native 4K speed of BF16 on one RTX 5090. Both quantized builds change the seeded output.
+
+The references use the **official MiniMax-H3-Image checkpoint in pinned SGLang**. The study did not time the standalone MiniMax/Diffusers runtime. [Reference settings and benchmark data](docs/benchmarks/README.md)
 
 ### Latency
 
-Each row compares six-pass builds using the same GPU count and request quality preset. Times are medians of three warmed serial HTTP requests per case. References are the native or earlier builds in the pinned SGLang runtime.
+Each row compares six-pass builds with the same GPU count and request preset. Times are warmed serial HTTP medians from three trials per case, except for the four-RTX-5090 BF16 reference (one trial). Speedup is reference time divided by optimized time.
 
-| Hardware | Reference → optimized | Quality | 2K product | Native 4K |
+| Hardware | Reference → optimized | Preset | 2K product | Native 4K |
 | --- | --- | --- | ---: | ---: |
-| **1 × L20** | Streamed BF16 → BF16 residency and VAE replay | `exact` | 16.59 → **11.74 s** | 72.68 → **58.91 s** |
-| **4 × L20** | BF16/NCCL → verified BF16 host transport, same PCIe placement | `lossless` | 5.29 → **5.03 s** | 24.27 → **22.85 s** |
-| **4 × L20** | Earlier FP8/SageAttention2 with NCCL → FP8 with quantized exchange | `lossless` | 3.45 → **2.29 s** | 14.72 → **10.14 s** |
-| **1 × RTX 5090** | Streamed BF16 → MXFP8/SageAttention2 | `lossless` | 6.76 → **3.18 s** | 32.58 → **13.86 s** |
+| **1 × L20** | Streamed BF16 → BF16 residency and VAE replay | `exact` | 16.59 → 11.74 s (**1.41×**) | 72.68 → 58.91 s (**1.23×**) |
+| **4 × L20** | BF16/NCCL → verified BF16 host transport, same placement | `lossless` | 5.29 → 5.03 s (**1.05×**) | 24.27 → 22.85 s (**1.06×**) |
+| **1 × RTX 5090** | Streamed BF16 → BF16 with resident DiT blocks | `lossless` | 6.76 → 6.67 s (**1.01×**) | 32.58 → 32.50 s (**1.00×**) |
+| **4 × L20** | Earlier BF16/TP4 → FP8/SageAttention2 with quantized exchange | `lossless` | 7.32 → 2.29 s (**3.20×**) | 32.22 → 10.14 s (**3.18×**) |
+| **1 × RTX 5090** | Streamed BF16 → MXFP8/SageAttention2 | `lossless` | 6.76 → 3.18 s (**2.12×**) | 32.58 → 13.86 s (**2.35×**) |
+| **4 × RTX 5090** | Tuned BF16 → MXFP8/SageAttention2 with GPU output packing | `lossless` | 3.83 → 2.39 s (**1.60×**) | 16.97 → 9.50 s (**1.79×**) |
 
-[![Warmed latency for 2K product, portrait, reference editing, and native 4K on one L20. All cases use six BF16 passes and native exact quality.](docs/benchmarks/single-exact.png)](docs/benchmarks/single-exact.png)
+[![Speedup over the named BF16 references for 2K product, portrait, editing, and native 4K. Teal rows preserved the audited PNGs; orange rows use approximate profiles.](docs/benchmarks/speedup.png)](docs/benchmarks/speedup.png)
 
-[L20 and four-RTX-5090 latency CSV](docs/benchmarks/latency.csv) · [Single-RTX-5090 latency CSV](docs/benchmarks/single-rtx5090-latency.csv)
+[See the fidelity chart stack](docs/benchmarks/fidelity.md) · [L20 and RTX 5090 latency CSV](docs/benchmarks/latency.csv) · [Primary single-RTX-5090 latency CSV](docs/benchmarks/single-rtx5090-latency.csv)
 
 <details>
 <summary>More latency charts for L20 and RTX 5090</summary>
+
+**One L20.** [Native `exact` BF16 latency and trial ranges](docs/benchmarks/single-exact.png) · [INT8, FP8, compile and pass experiments](docs/benchmarks/single-l20-tradeoffs.png)
 
 **One RTX 5090.** The chart shows the BF16, MXFP8, and reduced-pass builds, with min–max ranges across the timed requests.
 
@@ -48,7 +54,7 @@ Each row compares six-pass builds using the same GPU count and request quality p
 
 ### Throughput
 
-At six passes, one L20 completed **3.62 → 5.12 images/min** at 2K with two queued clients in `exact` mode. Across eight L20s, four two-GPU FP8 replicas completed **42.10 → 58.20 images/min** at 2K after the exchange optimization. The single-RTX-5090 run went from **8.72 → 18.17 images/min** with MXFP8/SageAttention2 across six requests from one client. [L20 throughput CSV](docs/benchmarks/throughput.csv) · [RTX 5090 throughput CSV](docs/benchmarks/single-rtx5090-throughput.csv)
+At six passes, one L20 completed **3.62 → 5.12 images/min** at 2K (**+41.3%**) with two queued clients in `exact` mode. Across eight L20s, four two-GPU FP8 replicas completed **42.10 → 58.20 images/min** (**+38.2%**) at 2K after the exchange optimization. One RTX 5090 went from **8.72 → 18.17 images/min** (**2.08×**) with MXFP8/SageAttention2 across six requests from one client. [All throughput data and settings](docs/benchmarks/README.md#throughput)
 
 [![Measured images per minute for one L20 at 2K and eight L20s at 2K and native 4K, with separate hardware and workload panels.](docs/benchmarks/throughput.png)](docs/benchmarks/throughput.png)
 
@@ -97,7 +103,9 @@ Use `--size 4096x4096` for native 4K or pass `--image` for reference editing. Th
 
 ## Image comparisons
 
-The benchmark edit case in a fresh checkout uses this geometric input. The matched-run tools build side-by-side frames, 1:1 crops, and pixel statistics from your own baseline and optimized runs. [Build an image stack](docs/benchmarking.md#build-an-image-stack) · [Edit prompt](examples/edit-prompt.txt)
+The **[fidelity chart stack](docs/benchmarks/fidelity.md)** shows how each measured optimization affects the seeded image: [one L20](docs/benchmarks/fidelity.md#one-l20), [multiple L20s](docs/benchmarks/fidelity.md#multiple-l20s), [one RTX 5090](docs/benchmarks/fidelity.md#one-rtx-5090), and [four RTX 5090s](docs/benchmarks/fidelity.md#four-rtx-5090s). The charts show SSIM and PSNR by workload where pixels were available, and PNG hash matches where only hashes were recorded.
+
+The benchmark edit case in a fresh checkout uses the geometric input below. You can use the matched-run tools to build side-by-side frames, 1:1 crops, and pixel statistics for your own baseline and optimized runs. [Build an image stack](docs/benchmarking.md#build-an-image-stack) · [Edit prompt](examples/edit-prompt.txt)
 
 <a href="examples/edit-reference.png"><img src="examples/edit-reference.png" alt="Benchmark edit input with a blue arch and orange circle" width="280"></a>
 

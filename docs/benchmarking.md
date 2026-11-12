@@ -1,6 +1,6 @@
 # Benchmarking and accuracy
 
-[Project README](../README.md) · [Published benchmark data](benchmarks/README.md) · [Runtime guide](runtime.md)
+[Project README](../README.md) · [Published benchmark data](benchmarks/README.md) · [Fidelity charts by optimization](benchmarks/fidelity.md) · [Runtime guide](runtime.md)
 
 ## Run a matched comparison
 
@@ -69,6 +69,6 @@ Serial latency includes server PNG/base64 encoding and receipt of the full HTTP 
 
 - [`summarize_benchmarks.py`](../bin/summarize_benchmarks.py) summarizes trial latency and PNG hash consistency.
 - [`compare_quality.py`](../bin/compare_quality.py) calculates PSNR and SSIM. [`make_comparisons.py`](../bin/make_comparisons.py) builds visual comparisons from local runs. [`compare_run_stack.py`](../bin/compare_run_stack.py) verifies matched metadata before building a stack.
-- The `export_*` scripts and [`plot_l20.py`](../bin/plot_l20.py) rebuild historical figures from the original study records. Plotting uses NumPy, Pillow, and Matplotlib.
+- [`export_benchmark_report.py`](../bin/export_benchmark_report.py) redraws the published speedup and fidelity charts from the bundled CSVs with Matplotlib. The other `export_*` scripts and [`plot_l20.py`](../bin/plot_l20.py) use the original study records.
 
 Generated PNGs and benchmark records are written under the ignored `runs/` directory. MiniMax’s model agreements govern use and distribution of outputs and results. [Model agreements](../THIRD_PARTY_NOTICES.md#model-files-and-results)

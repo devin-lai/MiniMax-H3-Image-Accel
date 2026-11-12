@@ -75,3 +75,65 @@ rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,product,3,1.320
 rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,portrait,3,1.3497,1.3086,1.3999
 rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,edit,3,2.6317,2.6192,2.6362
 rtx5090,fast + extreme,gpu-output-extreme-v2,4,lossless,3 merged,native-4k,3,5.1253,5.0959,5.202
+single-tradeoffs,Native BF16 reference,single-final-baseline,1,lossless,6,product,3,12.991,12.9657,13.0146
+single-tradeoffs,Native BF16 reference,single-final-baseline,1,lossless,6,portrait,3,13.0297,13.0202,13.0372
+single-tradeoffs,Native BF16 reference,single-final-baseline,1,lossless,6,edit,3,21.5374,21.5235,21.5393
+single-tradeoffs,Native BF16 reference,single-final-baseline,1,lossless,6,native-4k,3,59.4792,59.4621,59.4813
+single-tradeoffs,single: BF16 residency,single-lossless-optimized,1,lossless,6,product,3,11.5102,11.5004,11.5172
+single-tradeoffs,single: BF16 residency,single-lossless-optimized,1,lossless,6,portrait,3,11.5311,11.5297,11.5329
+single-tradeoffs,single: BF16 residency,single-lossless-optimized,1,lossless,6,edit,3,20.6551,20.6445,20.6712
+single-tradeoffs,single: BF16 residency,single-lossless-optimized,1,lossless,6,native-4k,3,58.0029,57.9532,58.0097
+single-tradeoffs,Full DiT ConvRot INT8,single-int8-convrot,1,lossless,6,product,1,8.6407,8.6407,8.6407
+single-tradeoffs,Full DiT ConvRot INT8,single-int8-convrot,1,lossless,6,portrait,1,8.6384,8.6384,8.6384
+single-tradeoffs,Full DiT ConvRot INT8,single-int8-convrot,1,lossless,6,edit,1,14.6451,14.6451,14.6451
+single-tradeoffs,Full DiT ConvRot INT8,single-int8-convrot,1,lossless,6,native-4k,1,43.1005,43.1005,43.1005
+single-tradeoffs,Selective DiT INT8 / protected blocks,single-int8-protected,1,lossless,6,product,1,7.7095,7.7095,7.7095
+single-tradeoffs,Selective DiT INT8 / protected blocks,single-int8-protected,1,lossless,6,portrait,1,7.7068,7.7068,7.7068
+single-tradeoffs,Selective DiT INT8 / protected blocks,single-int8-protected,1,lossless,6,edit,1,14.4374,14.4374,14.4374
+single-tradeoffs,Selective DiT INT8 / protected blocks,single-int8-protected,1,lossless,6,native-4k,1,43.0606,43.0606,43.0606
+single-tradeoffs,INT8 only in last 12 MLPs,single-int8-mlp12,1,lossless,6,product,1,10.8567,10.8567,10.8567
+single-tradeoffs,INT8 only in last 12 MLPs,single-int8-mlp12,1,lossless,6,portrait,1,10.872,10.872,10.872
+single-tradeoffs,DiT FP8 + FlashAttention,single-fp8-fa,1,lossless,6,product,1,8.5929,8.5929,8.5929
+single-tradeoffs,DiT FP8 + FlashAttention,single-fp8-fa,1,lossless,6,portrait,1,8.5868,8.5868,8.5868
+single-tradeoffs,DiT FP8 + FlashAttention,single-fp8-fa,1,lossless,6,edit,1,14.6065,14.6065,14.6065
+single-tradeoffs,DiT FP8 + FlashAttention,single-fp8-fa,1,lossless,6,native-4k,1,43.624,43.624,43.624
+single-tradeoffs,DiT FP8 + Sage2,single-fp8-sage6,1,lossless,6,product,1,6.9265,6.9265,6.9265
+single-tradeoffs,DiT FP8 + Sage2,single-fp8-sage6,1,lossless,6,portrait,1,6.9434,6.9434,6.9434
+single-tradeoffs,DiT FP8 + Sage2,single-fp8-sage6,1,lossless,6,edit,1,12.9006,12.9006,12.9006
+single-tradeoffs,DiT FP8 + Sage2,single-fp8-sage6,1,lossless,6,native-4k,1,34.5946,34.5946,34.5946
+single-tradeoffs,BF16 + Sage2 FP16 PV,single-bf16-sage-fp16,1,lossless,6,product,1,12.0167,12.0167,12.0167
+single-tradeoffs,BF16 + Sage2 FP16 PV,single-bf16-sage-fp16,1,lossless,6,portrait,1,12.0491,12.0491,12.0491
+single-tradeoffs,BF16 + Sage2 FP16 PV,single-bf16-sage-fp16,1,lossless,6,edit,1,21.0121,21.0121,21.0121
+single-tradeoffs,BF16 + Sage2 FP16 PV,single-bf16-sage-fp16,1,lossless,6,native-4k,1,56.2579,56.2579,56.2579
+single-tradeoffs,BF16 regional compile / warmed,single-bf16-compiled,1,lossless,6,product,1,12.8909,12.8909,12.8909
+single-tradeoffs,BF16 regional compile / warmed,single-bf16-compiled,1,lossless,6,portrait,2,12.8809,12.8713,12.8905
+single-tradeoffs,BF16 / five merged passes,single-bf16-five-merge,1,lossless,5 merged,product,1,11.2607,11.2607,11.2607
+single-tradeoffs,BF16 / five merged passes,single-bf16-five-merge,1,lossless,5 merged,portrait,1,11.2709,11.2709,11.2709
+single-tradeoffs,BF16 / TeaCache 0.15,single-bf16-tea015,1,lossless,6 + reuse,product,1,11.3106,11.3106,11.3106
+single-tradeoffs,BF16 / TeaCache 0.15,single-bf16-tea015,1,lossless,6 + reuse,portrait,1,11.3051,11.3051,11.3051
+single-tradeoffs,BF16 / early residual reuse,single-bf16-early-reuse,1,lossless,6 + reuse,product,1,11.2151,11.2151,11.2151
+single-tradeoffs,BF16 / early residual reuse,single-bf16-early-reuse,1,lossless,6 + reuse,portrait,1,11.2443,11.2443,11.2443
+single-exact-ablation,"BF16 residency, eager VAE",single-no-graph-samecard,1,exact,6,product,3,11.9231,11.9131,11.9376
+single-exact-ablation,"BF16 residency, eager VAE",single-no-graph-samecard,1,exact,6,portrait,3,11.94,11.9298,11.9547
+single-rtx5090-follow-up,BF16 streaming / FA (cache off),single-bf16-stream,1,lossless,6,product,3,6.8106,6.7539,6.9383
+single-rtx5090-follow-up,BF16 streaming / FA (cache off),single-bf16-stream,1,lossless,6,portrait,3,6.9726,6.8672,6.9994
+single-rtx5090-follow-up,BF16 streaming / FA (cache off),single-bf16-stream,1,lossless,6,edit,3,11.6119,11.5447,11.6437
+single-rtx5090-follow-up,BF16 streaming / FA (cache off),single-bf16-stream,1,lossless,6,native-4k,3,33.1599,32.7753,33.4437
+single-rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-int8-mlp,1,lossless,6,product,3,5.0771,5.011,5.0874
+single-rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-int8-mlp,1,lossless,6,portrait,3,5.0101,4.9598,5.0382
+single-rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-int8-mlp,1,lossless,6,edit,3,8.6464,8.642,9.1666
+single-rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-int8-mlp,1,lossless,6,native-4k,3,25.5903,25.5437,26.3274
+single-rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-cache,1,lossless,6,product,3,5.7219,5.6933,5.7854
+single-rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-cache,1,lossless,6,portrait,3,5.8033,5.6612,5.8852
+single-rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-cache,1,lossless,6,edit,3,10.1981,10.1782,10.2131
+single-rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-cache,1,lossless,6,native-4k,3,31.3732,31.2329,31.541
+single-rtx5090-screen,BF16 regional compile,single-bf16-compiled-screen,1,lossless,6,product,2,6.705550000000001,6.6963,6.7148
+single-rtx5090-screen,BF16 regional compile,single-bf16-compiled-screen,1,lossless,6,portrait,2,6.76455,6.7215,6.8076
+single-rtx5090-screen,BF16 + SageAttention2 (FP16 PV),single-bf16-sage-fp16-screen,1,lossless,6,product,2,6.58505,6.5573,6.6128
+single-rtx5090-screen,BF16 + SageAttention2 (FP16 PV),single-bf16-sage-fp16-screen,1,lossless,6,portrait,2,6.5837,6.5515,6.6159
+single-rtx5090-screen,Full DiT ConvRot INT8,single-int8-screen,1,lossless,6,product,2,3.8441,3.7961,3.8921
+single-rtx5090-screen,Full DiT ConvRot INT8,single-int8-screen,1,lossless,6,portrait,2,3.7962,3.7675,3.8249
+single-rtx5090-compile,MXFP8 DiT / compiled,single-mxfp8-dit-compiled-screen,1,lossless,6,product,2,3.90895,3.9054,3.9125
+single-rtx5090-compile,MXFP8 DiT / compiled,single-mxfp8-dit-compiled-screen,1,lossless,6,portrait,2,3.89175,3.8514,3.9321
+single-rtx5090-compile,MXFP8 DiT / eager,single-mxfp8-dit-screen,1,lossless,6,product,2,3.91965,3.8559,3.9834
+single-rtx5090-compile,MXFP8 DiT / eager,single-mxfp8-dit-screen,1,lossless,6,portrait,2,3.9086999999999996,3.8598,3.9576

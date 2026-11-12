@@ -1,0 +1,4 @@
+label,case,clients,images,wall_seconds,images_per_minute,median_request_seconds,p95_request_seconds
+single-bf16-stream,product,1,6,41.9002,8.5918,6.8704,7.0512
+single-int8-mlp,product,1,6,31.4298,11.4541,5.1651,5.2382
+single-bf16-cache,product,1,6,36.0794,9.978,5.9522,6.0212

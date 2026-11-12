@@ -1,0 +1,199 @@
+panel,optimization,reference,candidate,case,seed,psnr_db,ssim,png_bytes,source_csv
+l20-single-exact,Encoder + VAE residency (eager),single-exact-reference,single-no-graph-samecard,product,731,inf,1.0,same,provenance/single-l20/no-graph-quality.csv
+l20-single-exact,Encoder + VAE residency (eager),single-exact-reference,single-no-graph-samecard,portrait,1234,inf,1.0,same,provenance/single-l20/no-graph-quality.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference,single-exact-optimized,product,731,inf,1.0,same,provenance/single-l20/audits/quality-exact.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference,single-exact-optimized,portrait,1234,inf,1.0,same,provenance/single-l20/audits/quality-exact.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference,single-exact-optimized,edit,42,inf,1.0,same,provenance/single-l20/audits/quality-exact.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference,single-exact-optimized,native-4k,802,inf,1.0,same,provenance/single-l20/audits/quality-exact.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference-s1,single-exact-optimized-s1,product,732,inf,1.0,same,provenance/single-l20/audits/quality-exact-s1.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference-s1,single-exact-optimized-s1,portrait,1235,inf,1.0,same,provenance/single-l20/audits/quality-exact-s1.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference-s2,single-exact-optimized-s2,product,733,inf,1.0,same,provenance/single-l20/audits/quality-exact-s2.csv
+l20-single-exact,Residency + verified VAE replay,single-exact-reference-s2,single-exact-optimized-s2,portrait,1236,inf,1.0,same,provenance/single-l20/audits/quality-exact-s2.csv
+l20-single-lossless,BF16 residency,single-final-baseline,single-lossless-optimized,product,731,inf,1.0,same,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 residency,single-final-baseline,single-lossless-optimized,portrait,1234,inf,1.0,same,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 residency,single-final-baseline,single-lossless-optimized,edit,42,inf,1.0,same,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 residency,single-final-baseline,single-lossless-optimized,native-4k,802,inf,1.0,same,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Full DiT ConvRot INT8,single-final-baseline,single-int8-convrot,product,731,19.145494320179772,0.8937945447735139,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Full DiT ConvRot INT8,single-final-baseline,single-int8-convrot,portrait,1234,22.8931316583228,0.9072066768639417,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Full DiT ConvRot INT8,single-final-baseline,single-int8-convrot,edit,42,35.070328504269995,0.9873655494140793,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Full DiT ConvRot INT8,single-final-baseline,single-int8-convrot,native-4k,802,19.993055053521182,0.8316632208779401,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Selective DiT INT8,single-final-baseline,single-int8-protected,product,731,25.397335997582008,0.9675792708948194,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Selective DiT INT8,single-final-baseline,single-int8-protected,portrait,1234,23.521451486214232,0.9133117684446147,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Selective DiT INT8,single-final-baseline,single-int8-protected,edit,42,38.19671705101781,0.991553470179695,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,Selective DiT INT8,single-final-baseline,single-int8-protected,native-4k,802,20.34277018103311,0.8447118973400533,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,INT8 in last 12 MLPs,single-final-baseline,single-int8-mlp12,product,731,28.73764261230043,0.9746137528735886,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,INT8 in last 12 MLPs,single-final-baseline,single-int8-mlp12,portrait,1234,27.24019630737121,0.9504728369609432,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + FlashAttention,single-final-baseline,single-fp8-fa,product,731,18.206507529388418,0.8846110208671684,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + FlashAttention,single-final-baseline,single-fp8-fa,portrait,1234,19.463353936589773,0.8267546069713879,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + FlashAttention,single-final-baseline,single-fp8-fa,edit,42,30.32568774622327,0.9646923021458397,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + FlashAttention,single-final-baseline,single-fp8-fa,native-4k,802,19.084426758482913,0.8091037798499424,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + SageAttention2,single-final-baseline,single-fp8-sage6,product,731,17.22599919616851,0.865540482510024,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + SageAttention2,single-final-baseline,single-fp8-sage6,portrait,1234,18.86760301070074,0.8020076018134811,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + SageAttention2,single-final-baseline,single-fp8-sage6,edit,42,32.52386175885606,0.9672722443429915,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,DiT FP8 + SageAttention2,single-final-baseline,single-fp8-sage6,native-4k,802,18.55821960823038,0.780225358098685,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 + SageAttention2 (FP16 PV),single-final-baseline,single-bf16-sage-fp16,product,731,28.09222909715329,0.9612837447753871,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 + SageAttention2 (FP16 PV),single-final-baseline,single-bf16-sage-fp16,portrait,1234,21.126268557146723,0.8587352461155722,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 + SageAttention2 (FP16 PV),single-final-baseline,single-bf16-sage-fp16,edit,42,38.21401515418558,0.991652546872678,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 + SageAttention2 (FP16 PV),single-final-baseline,single-bf16-sage-fp16,native-4k,802,21.841303318197568,0.8652652510392174,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 regional compile,single-final-baseline,single-bf16-compiled,product,731,23.70502237507801,0.9503771170249988,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 regional compile,single-final-baseline,single-bf16-compiled,portrait,1234,27.738576055012945,0.9547617104844732,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 · 5 merged passes,single-final-baseline,single-bf16-five-merge,product,731,16.475060732465355,0.7643336636294662,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 · 5 merged passes,single-final-baseline,single-bf16-five-merge,portrait,1234,16.982571687714135,0.7028324761661612,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 · TeaCache 0.15,single-final-baseline,single-bf16-tea015,product,731,25.104309740323526,0.9119885939145193,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 · TeaCache 0.15,single-final-baseline,single-bf16-tea015,portrait,1234,21.772197344377634,0.852954316416466,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 · early residual reuse,single-final-baseline,single-bf16-early-reuse,product,731,16.478111038204233,0.7621314452602982,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 · early residual reuse,single-final-baseline,single-bf16-early-reuse,portrait,1234,17.061426086629062,0.7067688059653019,different,comparisons/single-l20/accuracy.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s1,single-lossless-optimized-s1,product,732,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s1.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s1,single-lossless-optimized-s1,portrait,1235,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s1.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s1,single-lossless-optimized-s1,edit,43,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s1.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s1,single-lossless-optimized-s1,native-4k,803,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s1.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s2,single-lossless-optimized-s2,product,733,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s2.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s2,single-lossless-optimized-s2,portrait,1236,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s2.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s2,single-lossless-optimized-s2,edit,44,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s2.csv
+l20-single-lossless,BF16 residency,single-final-baseline-s2,single-lossless-optimized-s2,native-4k,804,inf,1.0,same,provenance/single-l20/audits/quality-lossless-s2.csv
+l20-quality-preset,Upstream lossless preset,single-exact-reference,single-final-baseline,product,731,24.04345909357769,0.9561963242726039,different,comparisons/single-l20/quality-hints-accuracy.csv
+l20-quality-preset,Upstream lossless preset,single-exact-reference,single-final-baseline,portrait,1234,22.398511967027872,0.9125015418137553,different,comparisons/single-l20/quality-hints-accuracy.csv
+l20-tp1-vs-tp4,Single L20 (TP1),accuracy-reference-final,single-final-baseline,product,731,29.331491319674896,0.9668671186647552,different,comparisons/single-l20/topology-accuracy.csv
+l20-tp1-vs-tp4,Single L20 (TP1),accuracy-reference-final,single-final-baseline,portrait,1234,24.248327013025275,0.9291009475702895,different,comparisons/single-l20/topology-accuracy.csv
+l20-tp1-vs-tp4,Single L20 (TP1),accuracy-reference-final,single-final-baseline,edit,42,33.938665774307104,0.9853543237015662,different,comparisons/single-l20/topology-accuracy.csv
+l20-tp1-vs-tp4,Single L20 (TP1),accuracy-reference-final,single-final-baseline,native-4k,802,20.42459244211226,0.8508371179064926,different,comparisons/single-l20/topology-accuracy.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-final,accuracy-auto-final,product,731,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-final,accuracy-auto-final,portrait,1234,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-final,accuracy-auto-final,edit,42,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-final,accuracy-auto-final,native-4k,802,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-1,accuracy-auto-seed-1,product,732,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-1,accuracy-auto-seed-1,portrait,1235,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-1,accuracy-auto-seed-1,edit,43,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-1,accuracy-auto-seed-1,native-4k,803,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-17,accuracy-auto-seed-17,product,748,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-17,accuracy-auto-seed-17,portrait,1251,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-17,accuracy-auto-seed-17,edit,59,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-transport,Verified BF16 host transport,accuracy-reference-seed-17,accuracy-auto-seed-17,native-4k,819,inf,1.0,same,provenance/accuracy/quality.csv
+l20-bf16-placement,Spread placement + host transport,l20-bf16,accuracy-auto-final,product,731,inf,1.0,same,provenance/accuracy/quality-original.csv
+l20-bf16-placement,Spread placement + host transport,l20-bf16,accuracy-auto-final,portrait,1234,inf,1.0,same,provenance/accuracy/quality-original.csv
+l20-bf16-placement,Spread placement + host transport,l20-bf16,accuracy-auto-final,edit,42,inf,1.0,same,provenance/accuracy/quality-original.csv
+l20-bf16-placement,Spread placement + host transport,l20-bf16,accuracy-auto-final,native-4k,802,inf,1.0,same,provenance/accuracy/quality-original.csv
+l20-bf16-layout,BF16 TP2 + Ulysses2 (screen),accuracy-bf16-tp4,accuracy-bf16-tp2sp2,product,731,23.84,0.955,,provenance/accuracy/rejected-tp2sp2.csv
+l20-bf16-layout,BF16 TP2 + Ulysses2 (screen),accuracy-bf16-tp4,accuracy-bf16-tp2sp2,portrait,1234,24.04,0.9101,,provenance/accuracy/rejected-tp2sp2.csv
+l20-bf16-layout,BF16 TP2 + Ulysses2 (screen),accuracy-bf16-tp4,accuracy-bf16-tp2sp2,edit,42,38.5,0.9928,,provenance/accuracy/rejected-tp2sp2.csv
+l20-bf16-layout,BF16 TP2 + Ulysses2 (screen),accuracy-bf16-tp4,accuracy-bf16-tp2sp2,native-4k,802,22.69,0.8822,,provenance/accuracy/rejected-tp2sp2.csv
+l20-multi-fp8,2 GPUs · NCCL TP2 · 6 passes,l20-bf16,fp8-sage-tp2,product,731,18.14,0.8773,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,2 GPUs · NCCL TP2 · 6 passes,l20-bf16,fp8-sage-tp2,native-4k,802,18.23,0.7884,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,2 GPUs · NCCL U2 · 6 passes,l20-bf16,fp8-sage-tp1sp2,product,731,17.47,0.8753,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,2 GPUs · NCCL U2 · 6 passes,l20-bf16,fp8-sage-tp1sp2,native-4k,802,18.36,0.787,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 replicas · 2 GPUs each · 6 passes,l20-bf16,l20-dp4-smoke,product,731,17.47,0.8753,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 replicas · 2 GPUs each · 6 passes,l20-bf16,l20-dp4-smoke,edit,42,30.37,0.9642,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 6 passes,l20-bf16,fp8-sage-tp2sp2,product,731,18.75,0.8839,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 6 passes,l20-bf16,fp8-sage-tp2sp2,portrait,1234,18.69,0.8018,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 6 passes,l20-bf16,fp8-sage-tp2sp2,edit,42,31.29,0.9666,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 6 passes,l20-bf16,fp8-sage-tp2sp2,native-4k,802,19.65,0.8107,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 4 merged,l20-bf16,fp8-sage-tp2sp2-four,product,731,17.81,0.7897,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 4 merged,l20-bf16,fp8-sage-tp2sp2-four,portrait,1234,18.22,0.7556,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 4 merged,l20-bf16,fp8-sage-tp2sp2-four,edit,42,29.48,0.9199,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 4 merged,l20-bf16,fp8-sage-tp2sp2-four,native-4k,802,19.67,0.7904,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 3 merged,l20-bf16,fp8-sage-tp2sp2-three,product,731,15.43,0.6463,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 3 merged,l20-bf16,fp8-sage-tp2sp2-three,portrait,1234,16.61,0.6289,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 3 merged,l20-bf16,fp8-sage-tp2sp2-three,edit,42,23.37,0.8621,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · 3 merged,l20-bf16,fp8-sage-tp2sp2-three,native-4k,802,17.72,0.7332,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · TeaCache 0.4,l20-bf16,fp8-sage-tp2sp2-tea,product,731,18.06,0.7987,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL TP2 + U2 · TeaCache 0.4,l20-bf16,fp8-sage-tp2sp2-tea,native-4k,802,19.76,0.7917,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 6 passes,l20-bf16,fp8-sage-tp1sp4,product,731,18.66,0.8774,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 6 passes,l20-bf16,fp8-sage-tp1sp4,portrait,1234,18.59,0.8062,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 6 passes,l20-bf16,fp8-sage-tp1sp4,edit,42,30.22,0.9662,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 6 passes,l20-bf16,fp8-sage-tp1sp4,native-4k,802,18.67,0.8063,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 4 merged,l20-bf16,fp8-sage-tp1sp4-four,product,731,18.04,0.8058,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 4 merged,l20-bf16,fp8-sage-tp1sp4-four,portrait,1234,18.16,0.7469,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 4 merged,l20-bf16,fp8-sage-tp1sp4-four,edit,42,29.99,0.9227,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 4 merged,l20-bf16,fp8-sage-tp1sp4-four,native-4k,802,19.03,0.7889,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 3 merged,l20-bf16,fp8-sage-tp1sp4-three,product,731,15.45,0.6525,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 3 merged,l20-bf16,fp8-sage-tp1sp4-three,portrait,1234,15.96,0.6074,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 3 merged,l20-bf16,fp8-sage-tp1sp4-three,edit,42,24.17,0.8608,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · NCCL U4 · 3 merged,l20-bf16,fp8-sage-tp1sp4-three,native-4k,802,17.35,0.735,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 6 passes,l20-bf16,l20q-sp4,product,731,19.33,0.895,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 6 passes,l20-bf16,l20q-sp4,portrait,1234,17.24,0.7481,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 6 passes,l20-bf16,l20q-sp4,edit,42,32.19,0.9676,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 6 passes,l20-bf16,l20q-sp4,native-4k,802,19.07,0.807,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 4 merged,l20-bf16,l20q-sp4-four,product,731,18.66,0.8108,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 4 merged,l20-bf16,l20q-sp4-four,portrait,1234,16.85,0.7028,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 4 merged,l20-bf16,l20q-sp4-four,edit,42,29.94,0.9188,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 4 merged,l20-bf16,l20q-sp4-four,native-4k,802,19.34,0.7878,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 3 merged,l20-bf16,l20q-sp4-three,product,731,15.59,0.6685,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 3 merged,l20-bf16,l20q-sp4-three,portrait,1234,15.6,0.5954,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 3 merged,l20-bf16,l20q-sp4-three,edit,42,24.94,0.8643,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,4 GPUs · quantized U4 · 3 merged,l20-bf16,l20q-sp4-three,native-4k,802,17.64,0.7275,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 6 passes,l20-bf16,l20q-sp8,product,731,18.25,0.8829,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 6 passes,l20-bf16,l20q-sp8,portrait,1234,18.85,0.8101,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 6 passes,l20-bf16,l20q-sp8,edit,42,29.11,0.9587,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 6 passes,l20-bf16,l20q-sp8,native-4k,802,20.67,0.8353,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 4 merged,l20-bf16,l20q-sp8-four,product,731,17.32,0.7973,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 4 merged,l20-bf16,l20q-sp8-four,portrait,1234,18.18,0.7504,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 4 merged,l20-bf16,l20q-sp8-four,edit,42,28.62,0.9129,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 4 merged,l20-bf16,l20q-sp8-four,native-4k,802,20.51,0.799,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 3 merged,l20-bf16,l20q-sp8-three,product,731,15.07,0.668,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 3 merged,l20-bf16,l20q-sp8-three,portrait,1234,15.94,0.606,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 3 merged,l20-bf16,l20q-sp8-three,edit,42,24.29,0.8582,different,comparisons/l20/accuracy.csv
+l20-multi-fp8,8 GPUs · quantized U8 · 3 merged,l20-bf16,l20q-sp8-three,native-4k,802,17.77,0.7197,different,comparisons/l20/accuracy.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream,single-bf16-tuned,product,731,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream,single-bf16-tuned,portrait,1234,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream,single-bf16-tuned,edit,42,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream,single-bf16-tuned,native-4k,802,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-1,single-bf16-tuned-seed-1,product,732,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-1,single-bf16-tuned-seed-1,portrait,1235,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-1,single-bf16-tuned-seed-1,edit,43,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-1,single-bf16-tuned-seed-1,native-4k,803,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-17,single-bf16-tuned-seed-17,product,748,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-17,single-bf16-tuned-seed-17,portrait,1251,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-17,single-bf16-tuned-seed-17,edit,59,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,BF16 · 24 DiT blocks resident,single-bf16-stream-seed-17,single-bf16-tuned-seed-17,native-4k,819,inf,1.0,same,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream,single-mxfp8-dit,product,731,18.704474100755274,0.8833202511970807,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream,single-mxfp8-dit,portrait,1234,20.30746518656139,0.829164733449586,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream,single-mxfp8-dit,edit,42,32.387389514877185,0.9727425507952392,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream,single-mxfp8-dit,native-4k,802,19.69124117376842,0.8171424595712157,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-1,single-mxfp8-dit-seed-1,product,732,25.03533184002687,0.9038040074348862,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-1,single-mxfp8-dit-seed-1,portrait,1235,18.77957094488521,0.8348475054127852,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-1,single-mxfp8-dit-seed-1,edit,43,32.51476918359322,0.9649695115782451,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-1,single-mxfp8-dit-seed-1,native-4k,803,18.441026859157677,0.7642047890363726,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-17,single-mxfp8-dit-seed-17,product,748,14.946535777754988,0.8300222844612195,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-17,single-mxfp8-dit-seed-17,portrait,1251,19.674026860687192,0.8311573598570816,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-17,single-mxfp8-dit-seed-17,edit,59,29.924869066799978,0.9245261224956807,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT + FlashAttention,single-bf16-stream-seed-17,single-mxfp8-dit-seed-17,native-4k,819,15.947880837385258,0.6420118540403748,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream,single-mxfp8-sage,product,731,19.137422053476623,0.854576431238295,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream,single-mxfp8-sage,portrait,1234,18.80271207692772,0.8053115197941162,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream,single-mxfp8-sage,edit,42,29.068379489780316,0.9610116856067529,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream,single-mxfp8-sage,native-4k,802,18.77793405498989,0.8091858259014698,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-1,single-mxfp8-sage-seed-1,product,732,23.287388783981914,0.8777334023646561,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-1,single-mxfp8-sage-seed-1,portrait,1235,22.38801091527211,0.8917064077597718,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-1,single-mxfp8-sage-seed-1,edit,43,31.214185197939763,0.9593796774554566,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-1,single-mxfp8-sage-seed-1,native-4k,803,13.223339403983056,0.5903273955833394,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-17,single-mxfp8-sage-seed-17,product,748,15.472016191586055,0.8271731073894972,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-17,single-mxfp8-sage-seed-17,portrait,1251,18.054128758825684,0.7751763010170571,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-17,single-mxfp8-sage-seed-17,edit,59,30.026770884667876,0.9283156041546882,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 DiT/encoder + SageAttention2,single-bf16-stream-seed-17,single-mxfp8-sage-seed-17,native-4k,819,16.69049614997003,0.6623544211041225,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 4 merged,single-bf16-stream,single-mxfp8-sage-four,product,731,18.493096026526224,0.7768336882740335,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 4 merged,single-bf16-stream,single-mxfp8-sage-four,portrait,1234,17.63292823065528,0.7282705420817718,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 4 merged,single-bf16-stream,single-mxfp8-sage-four,edit,42,28.20597260895547,0.9168173480654304,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 4 merged,single-bf16-stream,single-mxfp8-sage-four,native-4k,802,18.710737450862432,0.7791660165434946,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 3 merged,single-bf16-stream,single-mxfp8-sage-three,product,731,15.646002264305224,0.6521395603236834,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 3 merged,single-bf16-stream,single-mxfp8-sage-three,portrait,1234,15.776110033648772,0.6049902482315657,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 3 merged,single-bf16-stream,single-mxfp8-sage-three,edit,42,22.953132016054134,0.8551802784606899,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · 3 merged,single-bf16-stream,single-mxfp8-sage-three,native-4k,802,18.13418488552564,0.7219842699803156,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · TeaCache 0.15,single-bf16-stream,single-mxfp8-sage-tea,product,731,18.944691894341034,0.822609260905109,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · TeaCache 0.15,single-bf16-stream,single-mxfp8-sage-tea,portrait,1234,17.804832692103922,0.7517397341570162,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · TeaCache 0.15,single-bf16-stream,single-mxfp8-sage-tea,edit,42,28.988655293293647,0.9537676245723056,different,provenance/single5090/quality.csv
+rtx5090-single,MXFP8 + SageAttention2 · TeaCache 0.15,single-bf16-stream,single-mxfp8-sage-tea,native-4k,802,18.7983178299186,0.794765423632724,different,provenance/single5090/quality.csv
+rtx5090-single,BF16 regional compile (screen),single-bf16-stream,single-bf16-compiled-screen,product,731,inf,1.0,same,provenance/single5090/screening.csv
+rtx5090-single,BF16 regional compile (screen),single-bf16-stream,single-bf16-compiled-screen,portrait,1234,inf,1.0,same,provenance/single5090/screening.csv
+rtx5090-single,BF16 + SageAttention2 (FP16 PV; screen),single-bf16-stream,single-bf16-sage-fp16-screen,product,731,20.48527728636461,0.9234474515213468,different,provenance/single5090/screening.csv
+rtx5090-single,BF16 + SageAttention2 (FP16 PV; screen),single-bf16-stream,single-bf16-sage-fp16-screen,portrait,1234,24.907453457990663,0.9367645231672448,different,provenance/single5090/screening.csv
+rtx5090-single,Full DiT ConvRot INT8 (screen),single-bf16-stream,single-int8-screen,product,731,18.897300098906445,0.8864726823208455,different,provenance/single5090/screening.csv
+rtx5090-single,Full DiT ConvRot INT8 (screen),single-bf16-stream,single-int8-screen,portrait,1234,23.44686058826926,0.9026223152727031,different,provenance/single5090/screening.csv
+rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-stream,single-bf16-cache,product,731,inf,1.0,same,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-stream,single-bf16-cache,portrait,1234,inf,1.0,same,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-stream,single-bf16-cache,edit,42,inf,1.0,same,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,BF16 residency + conditioning cache hits,single-bf16-stream,single-bf16-cache,native-4k,802,inf,1.0,same,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-bf16-stream,single-int8-mlp,product,731,18.9641815612453,0.8969472969325306,different,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-bf16-stream,single-int8-mlp,portrait,1234,26.34835062988031,0.9409428699296847,different,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-bf16-stream,single-int8-mlp,edit,42,38.03097656489489,0.9918457005247333,different,provenance/single5090/gpu1/quality.csv
+rtx5090-follow-up,INT8 MLPs; BF16 elsewhere,single-bf16-stream,single-int8-mlp,native-4k,802,19.74090357651885,0.8373865309947889,different,provenance/single5090/gpu1/quality.csv
+rtx5090-compiled-fp8,Regional compile on MXFP8 DiT,single-mxfp8-dit-screen,single-mxfp8-dit-compiled-screen,product,731,21.039189943191424,0.919797841249255,different,provenance/single5090/gpu1/compiled-parity.csv
+rtx5090-compiled-fp8,Regional compile on MXFP8 DiT,single-mxfp8-dit-screen,single-mxfp8-dit-compiled-screen,portrait,1234,23.072346104415825,0.9022039047908116,different,provenance/single5090/gpu1/compiled-parity.csv
